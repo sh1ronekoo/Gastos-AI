@@ -174,7 +174,7 @@ export default function LandingPage() {
               How It Works
             </p>
             <h2 className="mt-3 text-2xl font-bold tracking-tight">
-              How it works 
+              How it works
             </h2>
           </div>
           <div className="grid gap-4 lg:grid-cols-[1fr_auto_1fr_auto_1fr] lg:items-stretch">
@@ -229,7 +229,6 @@ export default function LandingPage() {
             </article>
           </div>
         </section>
-
       </main>
     </div>
   );
