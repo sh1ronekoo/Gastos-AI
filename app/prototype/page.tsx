@@ -1,28 +1,64 @@
 "use client";
 
 import type { FormEvent } from "react";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { supabase } from '@/lib/supabase';
 
 type ExpenseCategory = "Food" | "Transport" | "Utilities" | "Shopping" | "Health" | "Other";
-type Expense = { id: number; title: string; category: ExpenseCategory; amount: number };
+type Expense = {
+  id: string;
+  title: string;
+  category: ExpenseCategory;
+  amount: number;
+  created_at?: string;
+};
 
-const initialExpenses: Expense[] = [
-  { id: 1, title: "Groceries", category: "Food", amount: 1450.5 },
-  { id: 2, title: "Fuel", category: "Transport", amount: 780.0 },
-  { id: 3, title: "Internet Bill", category: "Utilities", amount: 1699.0 },
-];
 const categories: ExpenseCategory[] = ["Food", "Transport", "Utilities", "Shopping", "Health", "Other"];
 const pesoFormatter = new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" });
 
 export default function PrototypePage() {
+  const router = useRouter();
   const [isDark, setIsDark] = useState(false);
-  const [expenses, setExpenses] = useState<Expense[]>(initialExpenses);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
   const [title, setTitle] = useState("");
   const [category, setCategory] = useState<ExpenseCategory>("Food");
   const [amount, setAmount] = useState("");
   const [monthlyBudget, setMonthlyBudget] = useState("10000");
   const [selectedCategory, setSelectedCategory] = useState<ExpenseCategory | "All">("All");
   const [searchTerm, setSearchTerm] = useState("");
+  const [loadingData, setLoadingData] = useState(true);
+
+  // Auth guard + fetch data on mount
+  useEffect(() => {
+    const init = async () => {
+      // Check session
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        router.push('/login');
+        return;
+      }
+
+      // Fetch expenses
+      const { data: expensesData } = await supabase
+        .from('expenses')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (expensesData) setExpenses(expensesData);
+
+      // Fetch budget for current month
+      const month = new Date().toISOString().slice(0, 7);
+      const { data: budgetData } = await supabase
+        .from('budgets')
+        .select('*')
+        .eq('month', month)
+        .single();
+      if (budgetData) setMonthlyBudget(String(budgetData.monthly_budget));
+
+      setLoadingData(false);
+    };
+    init();
+  }, [router]);
 
   const totals = useMemo(() => {
     const total = expenses.reduce((sum, item) => sum + item.amount, 0);
@@ -52,17 +88,66 @@ export default function PrototypePage() {
     [expenses, searchTerm, selectedCategory],
   );
 
-  function handleAddExpense(event: FormEvent<HTMLFormElement>) {
+  async function handleAddExpense(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const parsedAmount = Number(amount);
     if (!title.trim() || Number.isNaN(parsedAmount) || parsedAmount <= 0) return;
-    setExpenses((prev) => [{ id: Date.now(), title: title.trim(), category, amount: parsedAmount }, ...prev]);
-    setTitle("");
-    setAmount("");
-    setCategory("Food");
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { data, error } = await supabase
+      .from('expenses')
+      .insert({
+        user_id: user.id,
+        title: title.trim(),
+        category,
+        amount: parsedAmount,
+      })
+      .select()
+      .single();
+
+    if (!error && data) {
+      setExpenses((prev) => [data, ...prev]);
+      setTitle("");
+      setAmount("");
+      setCategory("Food");
+    }
   }
-  function handleDeleteExpense(expenseId: number) {
-    setExpenses((prev) => prev.filter((item) => item.id !== expenseId));
+
+  async function handleDeleteExpense(expenseId: string) {
+    const { error } = await supabase
+      .from('expenses')
+      .delete()
+      .eq('id', expenseId);
+
+    if (!error) {
+      setExpenses((prev) => prev.filter((item) => item.id !== expenseId));
+    }
+  }
+
+  async function handleBudgetChange(value: string) {
+    setMonthlyBudget(value);
+
+    const parsedBudget = parseFloat(value);
+    if (Number.isNaN(parsedBudget) || parsedBudget <= 0) return;
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const month = new Date().toISOString().slice(0, 7);
+    await supabase
+      .from('budgets')
+      .upsert({
+        user_id: user.id,
+        monthly_budget: parsedBudget,
+        month,
+      }, { onConflict: 'user_id,month' });
+  }
+
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    router.push('/login');
   }
 
   const shellClass = isDark ? "min-h-screen bg-slate-950 text-slate-100" : "min-h-screen bg-slate-50 text-slate-900";
@@ -71,6 +156,14 @@ export default function PrototypePage() {
     ? "w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 outline-none ring-teal-400 focus:ring-2"
     : "w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none ring-teal-500 focus:ring-2";
   const subtleText = isDark ? "text-slate-300" : "text-slate-600";
+
+  if (loadingData) {
+    return (
+      <main className={`${shellClass} flex items-center justify-center`}>
+        <p className={subtleText}>Loading your data…</p>
+      </main>
+    );
+  }
 
   return (
     <main className={`${shellClass} relative overflow-hidden px-6 py-10 transition-colors duration-300`}>
@@ -83,8 +176,20 @@ export default function PrototypePage() {
               <p className={`mt-2 ${subtleText}`}>Add expenses, manage monthly budget, and monitor spending.</p>
             </div>
             <div className="flex items-center gap-3">
-              <a href="/landing" className={`rounded-md px-3 py-2 text-xs font-semibold transition ${isDark ? "border border-slate-700 text-slate-100 hover:bg-slate-800" : "border border-slate-300 text-slate-700 hover:bg-slate-100"}`}>Back to Landing</a>
-              <button type="button" onClick={() => setIsDark((prev) => !prev)} className={`rounded-md px-3 py-2 text-xs font-semibold transition ${isDark ? "bg-slate-800 text-slate-100 hover:bg-slate-700" : "bg-slate-200 text-slate-800 hover:bg-slate-300"}`}>{isDark ? "Light Mode" : "Dark Mode"}</button>
+              <button
+                type="button"
+                onClick={handleLogout}
+                className={`rounded-md px-3 py-2 text-xs font-semibold transition ${isDark ? "border border-slate-700 text-slate-100 hover:bg-slate-800" : "border border-slate-300 text-slate-700 hover:bg-slate-100"}`}
+              >
+                Logout
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsDark((prev) => !prev)}
+                className={`rounded-md px-3 py-2 text-xs font-semibold transition ${isDark ? "bg-slate-800 text-slate-100 hover:bg-slate-700" : "bg-slate-200 text-slate-800 hover:bg-slate-300"}`}
+              >
+                {isDark ? "Light Mode" : "Dark Mode"}
+              </button>
             </div>
           </div>
         </header>
@@ -103,7 +208,16 @@ export default function PrototypePage() {
               <div><label className="mb-1 block text-sm font-medium">Title</label><input value={title} onChange={(event) => setTitle(event.target.value)} className={inputClass} placeholder="e.g. Dinner" /></div>
               <div><label className="mb-1 block text-sm font-medium">Category</label><select value={category} onChange={(event) => setCategory(event.target.value as ExpenseCategory)} className={inputClass}>{categories.map((option) => <option key={option}>{option}</option>)}</select></div>
               <div><label className="mb-1 block text-sm font-medium">Amount</label><input type="number" min="0.01" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} className={inputClass} placeholder="0.00" /></div>
-              <div><label className="mb-1 block text-sm font-medium">Monthly Budget (PHP)</label><input type="number" min="0" step="1" value={monthlyBudget} onChange={(event) => setMonthlyBudget(event.target.value)} className={inputClass} placeholder="10000" /></div>
+              <div>
+                <label className="mb-1 block text-sm font-medium">Monthly Budget (PHP)</label>
+                <input
+                  type="number" min="0" step="1"
+                  value={monthlyBudget}
+                  onChange={(event) => handleBudgetChange(event.target.value)}
+                  className={inputClass}
+                  placeholder="10000"
+                />
+              </div>
               <button type="submit" className="w-full rounded-md bg-teal-600 px-4 py-2 font-medium text-white transition hover:bg-teal-500">Add Expense</button>
             </div>
           </form>
