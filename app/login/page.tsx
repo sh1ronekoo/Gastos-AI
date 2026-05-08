@@ -1,253 +1,280 @@
 "use client";
-import { supabase } from '@/lib/supabase'
 
+import Image from "next/image";
+import { supabase } from "@/lib/supabase";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
+type Mode = "login" | "register";
+
+type FormState = {
+  name: string;
+  email: string;
+  password: string;
+  confirm: string;
+};
+
+type FormErrors = Partial<Record<keyof FormState, string>>;
+
 export default function AuthPage() {
   const router = useRouter();
-  const [mode, setMode] = useState("login"); // "login" | "register"
-  const [darkMode, setDarkMode] = useState(false);
-  const [form, setForm] = useState({ name: "", email: "", password: "", confirm: "" });
-  const [errors, setErrors] = useState({});
-  const [loading, setLoading] = useState(false);
 
-  const validate = () => {
-    const errs = {};
+  const [mode, setMode] = useState<Mode>("login");
+  const [form, setForm] = useState<FormState>({
+    name: "",
+    email: "",
+    password: "",
+    confirm: "",
+  });
+  const [errors, setErrors] = useState<FormErrors>({});
+  const [loading, setLoading] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
+
+  const validate = (): FormErrors => {
+    const errs: FormErrors = {};
+
     if (mode === "register" && !form.name.trim()) errs.name = "Name is required.";
     if (!form.email.trim()) errs.email = "Email is required.";
     else if (!/\S+@\S+\.\S+/.test(form.email)) errs.email = "Enter a valid email.";
+
     if (!form.password) errs.password = "Password is required.";
     else if (form.password.length < 6) errs.password = "At least 6 characters.";
-    if (mode === "register" && form.password !== form.confirm)
+
+    if (mode === "register" && form.password !== form.confirm) {
       errs.confirm = "Passwords do not match.";
+    }
+
     return errs;
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault()
-    const errs = validate()
-    if (Object.keys(errs).length) { setErrors(errs); return }
-    setLoading(true)
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
 
-    if (mode === 'login') {
+    const errs = validate();
+    if (Object.keys(errs).length) {
+      setErrors(errs);
+      return;
+    }
+
+    setLoading(true);
+
+    if (mode === "login") {
       const { error } = await supabase.auth.signInWithPassword({
         email: form.email,
         password: form.password,
-      })
-      if (error) setErrors({ email: error.message })
-      else router.push('/prototype')
+      });
 
+      if (error) setErrors({ email: error.message });
+      else router.push("/prototype");
     } else {
       const { error } = await supabase.auth.signUp({
         email: form.email,
         password: form.password,
-      })
-      if (error) setErrors({ email: error.message })
-      else router.push('/prototype')
+      });
+
+      if (error) setErrors({ email: error.message });
+      else router.push("/prototype");
     }
 
-    setLoading(false)
-  }
-
-  const handleChange = (field) => (e) => {
-    setForm((f) => ({ ...f, [field]: e.target.value }));
-    setErrors((er) => ({ ...er, [field]: undefined }));
+    setLoading(false);
   };
 
-  const bg = darkMode ? "#0f1923" : "#e8f5f3";
-  const cardBg = darkMode ? "#162130" : "#ffffff";
-  const textPrimary = darkMode ? "#f0faf8" : "#0d2b2b";
-  const textSecondary = darkMode ? "#7ab5ae" : "#3d7a70";
-  const inputBg = darkMode ? "#1e2f3f" : "#f4fbfa";
-  const inputBorder = darkMode ? "#2a4050" : "#c8e8e3";
-  const inputFocus = "#0da88a";
-  const accent = "#0da88a";
-  const accentHover = "#0b9279";
-  const subtleText = darkMode ? "#5a8a84" : "#7ab5ae";
-  const errorColor = "#e05252";
-  const dividerColor = darkMode ? "#2a4050" : "#d0ece8";
+  const setField =
+    (field: keyof FormState) => (e: React.ChangeEvent<HTMLInputElement>) => {
+      const value = e.target.value;
+      setForm((prev) => ({ ...prev, [field]: value }));
+      setErrors((prev) => ({ ...prev, [field]: undefined }));
+    };
 
   return (
-    <div style={{ minHeight: "100vh", background: bg, display: "flex", flexDirection: "column", transition: "background 0.3s" }}>
-      {/* Navbar */}
-      <nav style={{
-        display: "flex", alignItems: "center", justifyContent: "space-between",
-        padding: "18px 36px", borderBottom: `1px solid ${dividerColor}`,
-        background: darkMode ? "#111d28" : "#ffffffcc", backdropFilter: "blur(8px)",
-        position: "sticky", top: 0, zIndex: 10
-      }}>
-        <div>
-          <div style={{ fontWeight: 800, fontSize: 18, color: textPrimary, letterSpacing: "-0.5px" }}>GASTOS AI</div>
-          <div style={{ fontSize: 11, color: subtleText, marginTop: 1 }}>Smart Expense Tracking</div>
+    <main className="auth-shell">
+      <section className="auth-left">
+        <div className="left-logo-wrap">
+          <Image src="/web-logo.png" alt="Gastos AI Logo" width={96} height={96} priority />
         </div>
-        <button
-          onClick={() => setDarkMode((d) => !d)}
-          style={{
-            padding: "7px 18px", borderRadius: 8, fontSize: 13, cursor: "pointer",
-            background: darkMode ? "#1e2f3f" : "#f0f7f6",
-            color: textSecondary, border: `1px solid ${inputBorder}`,
-            fontWeight: 500, transition: "all 0.2s"
-          }}
-        >
-          {darkMode ? "☀ Light Mode" : "🌙 Dark Mode"}
-        </button>
-      </nav>
 
-      {/* Main */}
-      <div style={{
-        flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
-        padding: "48px 16px"
-      }}>
-        <div style={{
-          background: cardBg, borderRadius: 20, padding: "44px 40px",
-          width: "100%", maxWidth: 420,
-          boxShadow: darkMode
-            ? "0 24px 64px rgba(0,0,0,0.5)"
-            : "0 12px 48px rgba(13,168,138,0.12)",
-          transition: "background 0.3s, box-shadow 0.3s"
-        }}>
-          {/* Logo */}
-          <div style={{ textAlign: "center", marginBottom: 28 }}>
-            <div style={{
-              display: "inline-flex", alignItems: "center", justifyContent: "center",
-              width: 52, height: 52, borderRadius: 14, background: accent,
-              marginBottom: 12
-            }}>
-              <span style={{ fontSize: 24 }}>₱</span>
-            </div>
-            <div style={{ fontSize: 22, fontWeight: 800, color: textPrimary, letterSpacing: "-0.5px" }}>
-              {mode === "login" ? "Welcome back" : "Create account"}
-            </div>
-            <div style={{ fontSize: 13, color: subtleText, marginTop: 4 }}>
-              {mode === "login" ? "Sign in to your GASTOS AI account" : "Start tracking your expenses smarter"}
+        <h1>
+          Welcome to
+          <br />
+          Gastos AI
+        </h1>
+        <p>Track smarter. Spend wiser.</p>
+
+        <div className="left-visual">
+          <div className="mock-card main">
+            <div className="mock-title">Dashboard</div>
+            <div className="mock-lines">
+              <span />
+              <span />
+              <span />
             </div>
           </div>
+          <div className="mock-card floating one">💳</div>
+          <div className="mock-card floating two">📊</div>
+          <div className="mock-card floating three">💼</div>
+        </div>
+      </section>
 
-          {/* Tab Toggle */}
-          <div style={{
-            display: "flex", background: inputBg, borderRadius: 10,
-            padding: 4, marginBottom: 28, border: `1px solid ${inputBorder}`
-          }}>
-            {["login", "register"].map((m) => (
-              <button
-                key={m}
-                onClick={() => { setMode(m); setErrors({}); }}
-                style={{
-                  flex: 1, padding: "9px 0", borderRadius: 8, fontSize: 13, cursor: "pointer",
-                  fontWeight: 600, border: "none", transition: "all 0.2s",
-                  background: mode === m ? accent : "transparent",
-                  color: mode === m ? "#ffffff" : subtleText,
-                }}
-              >
-                {m === "login" ? "Sign In" : "Register"}
-              </button>
-            ))}
-          </div>
-
-          {/* Form */}
-          <form onSubmit={handleSubmit} noValidate>
-            {mode === "register" && (
-              <Field
-                label="Full Name" placeholder="e.g. Juan dela Cruz"
-                value={form.name} onChange={handleChange("name")}
-                error={errors.name} inputBg={inputBg} inputBorder={inputBorder}
-                inputFocus={inputFocus} textPrimary={textPrimary} subtleText={subtleText}
-                errorColor={errorColor} darkMode={darkMode}
-              />
-            )}
-            <Field
-              label="Email Address" placeholder="you@email.com" type="email"
-              value={form.email} onChange={handleChange("email")}
-              error={errors.email} inputBg={inputBg} inputBorder={inputBorder}
-              inputFocus={inputFocus} textPrimary={textPrimary} subtleText={subtleText}
-              errorColor={errorColor} darkMode={darkMode}
-            />
-            <Field
-              label="Password" placeholder="••••••••" type="password"
-              value={form.password} onChange={handleChange("password")}
-              error={errors.password} inputBg={inputBg} inputBorder={inputBorder}
-              inputFocus={inputFocus} textPrimary={textPrimary} subtleText={subtleText}
-              errorColor={errorColor} darkMode={darkMode}
-            />
-            {mode === "register" && (
-              <Field
-                label="Confirm Password" placeholder="••••••••" type="password"
-                value={form.confirm} onChange={handleChange("confirm")}
-                error={errors.confirm} inputBg={inputBg} inputBorder={inputBorder}
-                inputFocus={inputFocus} textPrimary={textPrimary} subtleText={subtleText}
-                errorColor={errorColor} darkMode={darkMode}
-              />
-            )}
-
-            {mode === "login" && (
-              <div style={{ textAlign: "right", marginBottom: 20, marginTop: -4 }}>
-                <a href="#" style={{ fontSize: 12, color: accent, textDecoration: "none", fontWeight: 500 }}>
-                  Forgot password?
-                </a>
-              </div>
-            )}
-
+      <section className="auth-right">
+        <div className="auth-card">
+          <div className="auth-tabs">
             <button
-              type="submit"
-              disabled={loading}
-              style={{
-                width: "100%", padding: "13px 0", borderRadius: 10, fontSize: 15,
-                fontWeight: 700, cursor: loading ? "not-allowed" : "pointer", border: "none",
-                background: loading ? subtleText : accent,
-                color: "#ffffff", letterSpacing: "0.2px",
-                transition: "background 0.2s, transform 0.1s",
-                marginTop: 4
+              type="button"
+              className={mode === "login" ? "active" : ""}
+              onClick={() => {
+                setMode("login");
+                setErrors({});
               }}
             >
-              {loading ? "Please wait…" : mode === "login" ? "Sign In" : "Create Account"}
+              Sign In
+            </button>
+            <button
+              type="button"
+              className={mode === "register" ? "active" : ""}
+              onClick={() => {
+                setMode("register");
+                setErrors({});
+              }}
+            >
+              Create Account
+            </button>
+          </div>
+
+          <div className="auth-header">
+            <div className="auth-logo-plain">
+              <Image src="/web-logo.png" alt="Gastos AI Logo" width={62} height={62} />
+            </div>
+            <h2>{mode === "login" ? "Sign In to Gastos AI" : "Create your account"}</h2>
+            <p>
+              {mode === "login"
+                ? "Access your AI-powered financial dashboard."
+                : "Start building better spending habits today."}
+            </p>
+          </div>
+
+          <form onSubmit={handleSubmit} noValidate className="auth-form">
+            {mode === "register" && (
+              <Field
+                label="Full Name"
+                placeholder="e.g. Juan Dela Cruz"
+                value={form.name}
+                onChange={setField("name")}
+                error={errors.name}
+              />
+            )}
+
+            <Field
+              label="Email Address"
+              type="email"
+              placeholder="email@address.com"
+              value={form.email}
+              onChange={setField("email")}
+              error={errors.email}
+            />
+
+            <Field
+              label="Password"
+              type="password"
+              placeholder="••••••••"
+              value={form.password}
+              onChange={setField("password")}
+              error={errors.password}
+            />
+
+            {mode === "register" && (
+              <Field
+                label="Confirm Password"
+                type="password"
+                placeholder="••••••••"
+                value={form.confirm}
+                onChange={setField("confirm")}
+                error={errors.confirm}
+              />
+            )}
+
+            <div className="auth-row">
+              <label className="auth-check">
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                />
+                <span>Remember Me</span>
+              </label>
+              <button type="button" className="auth-link-btn">
+                Forgot Password?
+              </button>
+            </div>
+
+            <button className="auth-submit" type="submit" disabled={loading}>
+              {loading
+                ? "Please wait..."
+                : mode === "login"
+                ? "Sign In"
+                : "Create Account"}
             </button>
           </form>
 
-          {/* Switch mode */}
-          <div style={{ textAlign: "center", marginTop: 24, fontSize: 13, color: subtleText }}>
-            {mode === "login" ? "Don't have an account? " : "Already have an account? "}
-            <button
-              onClick={() => { setMode(mode === "login" ? "register" : "login"); setErrors({}); }}
-              style={{
-                background: "none", border: "none", color: accent, cursor: "pointer",
-                fontWeight: 700, fontSize: 13, padding: 0
-              }}
-            >
-              {mode === "login" ? "Register" : "Sign In"}
+          <div className="auth-divider">or continue with</div>
+
+          <div className="auth-socials">
+            <button type="button" aria-label="Google">
+              <Image src="/google-logo.png" alt="Google" width={22} height={22} />
+            </button>
+            <button type="button" aria-label="Apple">
+              <Image src="/apple-logo.png" alt="Apple" width={22} height={22} />
+            </button>
+            <button type="button" aria-label="Microsoft">
+              <Image src="/microsoft-logo.png" alt="Microsoft" width={22} height={22} />
             </button>
           </div>
-        </div>
-      </div>
 
-      {/* Footer */}
-      <div style={{ textAlign: "center", padding: "20px", fontSize: 12, color: subtleText }}>
-        © {new Date().getFullYear()} GASTOS AI · Smart Expense Tracking
-      </div>
-    </div>
+          <p className="auth-switch">
+            {mode === "login" ? "Don't have an account?" : "Already have an account?"}{" "}
+            <button
+              type="button"
+              onClick={() => {
+                setMode(mode === "login" ? "register" : "login");
+                setErrors({});
+              }}
+            >
+              {mode === "login" ? "Sign Up" : "Sign In"}
+            </button>
+          </p>
+        </div>
+      </section>
+    </main>
   );
 }
 
-function Field({ label, placeholder, type = "text", value, onChange, error, inputBg, inputBorder, inputFocus, textPrimary, subtleText, errorColor, darkMode }) {
-  const [focused, setFocused] = useState(false);
+type FieldProps = {
+  label: string;
+  placeholder: string;
+  value: string;
+  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  error?: string;
+  type?: React.HTMLInputTypeAttribute;
+};
+
+function Field({
+  label,
+  placeholder,
+  value,
+  onChange,
+  error,
+  type = "text",
+}: FieldProps) {
   return (
-    <div style={{ marginBottom: 16 }}>
-      <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: textPrimary, marginBottom: 6 }}>
-        {label}
-      </label>
+    <div className="auth-field-wrap">
+      <label className="auth-label">{label}</label>
       <input
-        type={type} placeholder={placeholder} value={value} onChange={onChange}
-        onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
-        style={{
-          width: "100%", padding: "11px 14px", borderRadius: 9, fontSize: 14,
-          background: inputBg, color: textPrimary,
-          border: `1.5px solid ${error ? errorColor : focused ? inputFocus : inputBorder}`,
-          outline: "none", transition: "border 0.2s",
-          boxSizing: "border-box",
-          fontFamily: "inherit"
-        }}
+        className={`auth-input ${error ? "error" : ""}`}
+        type={type}
+        placeholder={placeholder}
+        value={value}
+        onChange={onChange}
       />
-      {error && <div style={{ fontSize: 11.5, color: errorColor, marginTop: 4 }}>{error}</div>}
+      {error && <p className="auth-error">{error}</p>}
     </div>
   );
 }
