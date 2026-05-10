@@ -94,6 +94,9 @@ body {
   width: 320px;
   height: 260px;
   position: relative;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
 }
 
 .mock-card {
@@ -373,4 +376,15 @@ body {
   .auth-right {
     padding: 1rem;
   }
+}
+
+/* Prototype dashboard: static copy is not editable; only real inputs accept typing/selection */
+.dashboard-page {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.dashboard-page :where(input:not([disabled]), textarea:not([disabled]), select:not([disabled])) {
+  user-select: text;
+  -webkit-user-select: text;
 }
