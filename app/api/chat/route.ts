@@ -3,9 +3,9 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
 const MODELS = [
+  "models/gemini-3.1-flash-lite",
+  "models/gemini-3.0-flash",
   "models/gemini-2.5-flash",
-  "models/gemini-2.0-flash",
-  "models/gemini-2.0-flash-lite",
 ];
 
 function buildSystemPrompt(expenses: any[], budget: string): string {
