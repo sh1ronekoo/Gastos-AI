@@ -130,7 +130,7 @@ const Icons = {
   ),
 };
 
-const CATEGORY_ICON_COMPONENTS: Record<string, () => JSX.Element> = {
+const CATEGORY_ICON_COMPONENTS: Record<string, React.ComponentType> = {
   Food: Icons.Food,
   Transport: Icons.Transport,
   Utilities: Icons.Utilities,
