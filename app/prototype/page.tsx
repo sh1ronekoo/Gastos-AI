@@ -386,9 +386,12 @@ export default function PrototypePage() {
   const CategoryDropdown = ({
     value, onChange, open, setOpen, dropRef, filterMode = false,
   }: {
-    value: string; onChange: (v: string) => void;
-    open: boolean; setOpen: (v: boolean) => void;
-    dropRef: React.RefObject<HTMLDivElement>; filterMode?: boolean;
+    value: string; 
+    onChange: (v: string) => void;
+    open: boolean; 
+    setOpen: (v: boolean) => void;
+    dropRef: React.RefObject<HTMLDivElement | null>; 
+    filterMode?: boolean;
   }) => {
     const options = filterMode ? ["All", ...categories] : categories;
     const CatIcon = value !== "All" ? CATEGORY_ICON_COMPONENTS[value as ExpenseCategory] : null;
