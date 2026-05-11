@@ -6,63 +6,191 @@ import { supabase } from "@/lib/supabase";
 import { usePrototypeTheme } from "./prototype-shell";
 
 type ExpenseCategory = "Food" | "Transport" | "Utilities" | "Shopping" | "Health" | "Other";
-
 type Expense = {
-  id: string;
-  title: string;
-  category: ExpenseCategory;
-  amount: number;
-  merchant_name: string | null;
-  notes: string | null;
-  auto_categorized: boolean;
-  receipt_image_url: string | null;
-  raw_ocr_text: string | null;
-  created_at?: string;
+  id: string; title: string; category: ExpenseCategory; amount: number;
+  merchant_name: string | null; notes: string | null; auto_categorized: boolean;
+  receipt_image_url: string | null; raw_ocr_text: string | null; created_at?: string;
 };
-
 type OCRResult = {
-  merchant: string | null;
-  date: string | null;
-  amount: number | null;
-  category: ExpenseCategory | null;
-  items: string[];
-  raw_text: string | null;
-  confidence: number;
+  merchant: string | null; date: string | null; amount: number | null;
+  category: ExpenseCategory | null; items: string[]; raw_text: string | null; confidence: number;
 };
 
 const categories: ExpenseCategory[] = ["Food", "Transport", "Utilities", "Shopping", "Health", "Other"];
 const pesoFormatter = new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" });
 
 const CATEGORY_COLORS: Record<ExpenseCategory, string> = {
-  Food:      "bg-teal-500",
-  Transport: "bg-indigo-500",
-  Utilities: "bg-orange-400",
-  Shopping:  "bg-pink-500",
-  Health:    "bg-green-500",
-  Other:     "bg-slate-500",
+  Food: "#14b8a6", Transport: "#6366f1", Utilities: "#fb923c",
+  Shopping: "#ec4899", Health: "#22c55e", Other: "#64748b",
+};
+
+// ── SVG icon components ──────────────────────────────────────
+function IconFood({ size = 18, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M18 8h1a4 4 0 0 1 0 8h-1" /><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z" />
+      <line x1="6" y1="1" x2="6" y2="4" /><line x1="10" y1="1" x2="10" y2="4" /><line x1="14" y1="1" x2="14" y2="4" />
+    </svg>
+  );
+}
+function IconTransport({ size = 18, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="1" y="3" width="15" height="13" rx="2" />
+      <path d="M16 8h4l3 3v5h-7V8z" />
+      <circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" />
+    </svg>
+  );
+}
+function IconUtilities({ size = 18, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+    </svg>
+  );
+}
+function IconShopping({ size = 18, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z" />
+      <line x1="3" y1="6" x2="21" y2="6" /><path d="M16 10a4 4 0 0 1-8 0" />
+    </svg>
+  );
+}
+function IconHealth({ size = 18, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+    </svg>
+  );
+}
+function IconOther({ size = 18, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+    </svg>
+  );
+}
+function IconSpend({ size = 18, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="5" width="20" height="14" rx="2" />
+      <line x1="2" y1="10" x2="22" y2="10" />
+    </svg>
+  );
+}
+function IconRecords({ size = 18, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><polyline points="10 9 9 9 8 9" />
+    </svg>
+  );
+}
+function IconTrophy({ size = 18, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="8 21 12 21 16 21" /><line x1="12" y1="17" x2="12" y2="21" />
+      <path d="M7 4H17V12a5 5 0 0 1-10 0V4z" />
+      <path d="M7 9H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h3" />
+      <path d="M17 9h3a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-3" />
+    </svg>
+  );
+}
+function IconAvg({ size = 18, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="6" y1="20" x2="6" y2="14" />
+    </svg>
+  );
+}
+function IconCamera({ size = 18, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+      <circle cx="12" cy="13" r="4" />
+    </svg>
+  );
+}
+function IconUpload({ size = 18, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="16 16 12 12 8 16" /><line x1="12" y1="12" x2="12" y2="21" />
+      <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3" />
+    </svg>
+  );
+}
+function IconCapture({ size = 18, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="3" />
+      <path d="M3 9a2 2 0 0 1 2-2h1l2-3h8l2 3h1a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9z" />
+    </svg>
+  );
+}
+function IconScan({ size = 18, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 7V5a2 2 0 0 1 2-2h2" /><path d="M17 3h2a2 2 0 0 1 2 2v2" />
+      <path d="M21 17v2a2 2 0 0 1-2 2h-2" /><path d="M7 21H5a2 2 0 0 1-2-2v-2" />
+      <line x1="3" y1="12" x2="21" y2="12" />
+    </svg>
+  );
+}
+function IconCheck({ size = 18, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="20 6 9 17 4 12" />
+    </svg>
+  );
+}
+function IconReceipt({ size = 18, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 2v20l3-2 3 2 3-2 3 2 3-2 3 2V2l-3 2-3-2-3 2-3-2-3 2z" />
+      <line x1="9" y1="9" x2="15" y2="9" /><line x1="9" y1="13" x2="15" y2="13" />
+    </svg>
+  );
+}
+function IconSearch({ size = 16, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+    </svg>
+  );
+}
+function IconWarning({ size = 16, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+      <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+    </svg>
+  );
+}
+
+const CATEGORY_ICON_COMPONENTS: Record<ExpenseCategory, React.FC<{ size?: number; color?: string }>> = {
+  Food: IconFood, Transport: IconTransport, Utilities: IconUtilities,
+  Shopping: IconShopping, Health: IconHealth, Other: IconOther,
 };
 
 export default function PrototypePage() {
   const { isDark } = usePrototypeTheme();
-
-  // Expense data
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loadingData, setLoadingData] = useState(true);
-
-  // Form fields — all schema columns
   const [title, setTitle] = useState("");
   const [category, setCategory] = useState<ExpenseCategory>("Food");
   const [amount, setAmount] = useState("");
   const [merchantName, setMerchantName] = useState("");
   const [notes, setNotes] = useState("");
   const [monthlyBudget, setMonthlyBudget] = useState("10000");
-
-  // Records filter
   const [selectedCategory, setSelectedCategory] = useState<ExpenseCategory | "All">("All");
   const [searchTerm, setSearchTerm] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [categoryDropdownOpen, setCategoryDropdownOpen] = useState(false);
+  const [filterDropdownOpen, setFilterDropdownOpen] = useState(false);
+  const categoryDropdownRef = useRef<HTMLDivElement>(null);
+  const filterDropdownRef = useRef<HTMLDivElement>(null);
 
-  // Scanner state
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -74,26 +202,18 @@ export default function PrototypePage() {
   const [capturedBlob, setCapturedBlob] = useState<Blob | null>(null);
   const [ocrResult, setOcrResult] = useState<OCRResult | null>(null);
   const [ocrError, setOcrError] = useState<string | null>(null);
-
-  // Tracks if current form was filled by OCR
   const [isAutoCategorized, setIsAutoCategorized] = useState(false);
   const [pendingReceiptUrl, setPendingReceiptUrl] = useState<string | null>(null);
   const [pendingRawOcr, setPendingRawOcr] = useState<string | null>(null);
-
   const formRef = useRef<HTMLDivElement>(null);
 
-  // ── Data fetching ──────────────────────────────────────────
   useEffect(() => {
     const init = async () => {
-      const { data: expensesData } = await supabase
-        .from("expenses").select("*").order("created_at", { ascending: false });
+      const { data: expensesData } = await supabase.from("expenses").select("*").order("created_at", { ascending: false });
       if (expensesData) setExpenses(expensesData);
-
       const month = new Date().toISOString().slice(0, 7);
-      const { data: budgetData } = await supabase
-        .from("budgets").select("*").eq("month", month).single();
+      const { data: budgetData } = await supabase.from("budgets").select("*").eq("month", month).single();
       if (budgetData) setMonthlyBudget(String(budgetData.monthly_budget));
-
       setLoadingData(false);
     };
     init();
@@ -101,194 +221,115 @@ export default function PrototypePage() {
 
   useEffect(() => { return () => stopStream(); }, []);
 
-  // ── Camera helpers ─────────────────────────────────────────
-  function stopStream() {
-    streamRef.current?.getTracks().forEach((t) => t.stop());
-    streamRef.current = null;
-  }
+  // Close dropdowns on outside click
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (categoryDropdownRef.current && !categoryDropdownRef.current.contains(e.target as Node)) setCategoryDropdownOpen(false);
+      if (filterDropdownRef.current && !filterDropdownRef.current.contains(e.target as Node)) setFilterDropdownOpen(false);
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  function stopStream() { streamRef.current?.getTracks().forEach(t => t.stop()); streamRef.current = null; }
 
   async function startLiveCamera() {
     setOcrResult(null); setOcrError(null);
     setCapturedImageUrl(null); setCapturedBase64(null); setCapturedBlob(null);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
-      });
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } } });
       streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-      }
+      if (videoRef.current) { videoRef.current.srcObject = stream; await videoRef.current.play(); }
       setScannerMode("live");
-    } catch {
-      setOcrError("Camera access denied. Use gallery upload instead.");
-    }
+    } catch { setOcrError("Camera access denied. Use gallery upload instead."); }
   }
 
   function captureFrame() {
     if (!videoRef.current || !canvasRef.current) return;
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+    const video = videoRef.current; const canvas = canvasRef.current;
+    canvas.width = video.videoWidth; canvas.height = video.videoHeight;
     canvas.getContext("2d")?.drawImage(video, 0, 0);
-
     const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
-    stopStream();
-    setCapturedImageUrl(dataUrl);
-    setCapturedBase64(dataUrl.split(",")[1]);
-    setCapturedMime("image/jpeg");
-
-    // Also keep as blob for storage upload
-    canvas.toBlob((blob) => { if (blob) setCapturedBlob(blob); }, "image/jpeg", 0.92);
+    stopStream(); setCapturedImageUrl(dataUrl); setCapturedBase64(dataUrl.split(",")[1]); setCapturedMime("image/jpeg");
+    canvas.toBlob(blob => { if (blob) setCapturedBlob(blob); }, "image/jpeg", 0.92);
     setScannerMode("captured");
   }
 
   function handleGalleryPick(file: File | undefined) {
     if (!file || !file.type.startsWith("image/")) return;
-    stopStream();
-    setOcrResult(null); setOcrError(null);
-    setCapturedBlob(file);
-
+    stopStream(); setOcrResult(null); setOcrError(null); setCapturedBlob(file);
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = e => {
       const dataUrl = e.target?.result as string;
-      setCapturedImageUrl(dataUrl);
-      setCapturedBase64(dataUrl.split(",")[1]);
-      setCapturedMime(file.type);
-      setScannerMode("captured");
+      setCapturedImageUrl(dataUrl); setCapturedBase64(dataUrl.split(",")[1]); setCapturedMime(file.type); setScannerMode("captured");
     };
     reader.readAsDataURL(file);
   }
 
-  // ── Upload receipt image to Supabase Storage ───────────────
   async function uploadReceiptImage(blob: Blob, mime: string): Promise<string | null> {
     try {
       const ext = mime === "image/png" ? "png" : "jpg";
       const fileName = `receipt_${Date.now()}.${ext}`;
-
-      const { data, error } = await supabase.storage
-        .from("receipts")
-        .upload(fileName, blob, { contentType: mime, upsert: false });
-
+      const { data, error } = await supabase.storage.from("receipts").upload(fileName, blob, { contentType: mime, upsert: false });
       if (error || !data) return null;
-
-      const { data: urlData } = supabase.storage
-        .from("receipts")
-        .getPublicUrl(data.path);
-
+      const { data: urlData } = supabase.storage.from("receipts").getPublicUrl(data.path);
       return urlData.publicUrl ?? null;
-    } catch {
-      return null;
-    }
+    } catch { return null; }
   }
 
-  // ── OCR ───────────────────────────────────────────────────
   async function runOCR() {
     if (!capturedBase64) return;
-    setScannerMode("processing");
-    setOcrError(null);
-
+    setScannerMode("processing"); setOcrError(null);
     try {
-      const res = await fetch("/api/ocr", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image: capturedBase64, mimeType: capturedMime }),
-      });
+      const res = await fetch("/api/ocr", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image: capturedBase64, mimeType: capturedMime }) });
       const data = await res.json();
-
-      if (data.error) {
-        setOcrError(data.error);
-        setScannerMode("captured");
-        return;
-      }
-
-      setOcrResult(data);
-      setScannerMode("captured");
-    } catch {
-      setOcrError("Failed to process receipt. Please try again.");
-      setScannerMode("captured");
-    }
+      if (data.error) { setOcrError(data.error); setScannerMode("captured"); return; }
+      setOcrResult(data); setScannerMode("captured");
+    } catch { setOcrError("Failed to process receipt. Please try again."); setScannerMode("captured"); }
   }
 
-  // ── Apply OCR to form ──────────────────────────────────────
   async function applyOCRToForm() {
     if (!ocrResult) return;
-
-    // Upload image to storage first
     let receiptUrl: string | null = null;
-    if (capturedBlob) {
-      receiptUrl = await uploadReceiptImage(capturedBlob, capturedMime);
-    }
-
+    if (capturedBlob) receiptUrl = await uploadReceiptImage(capturedBlob, capturedMime);
     if (ocrResult.merchant) { setTitle(ocrResult.merchant); setMerchantName(ocrResult.merchant); }
     if (ocrResult.amount) setAmount(String(ocrResult.amount));
     if (ocrResult.category) setCategory(ocrResult.category);
     if (ocrResult.items?.length) setNotes(ocrResult.items.join(", "));
-
-    setIsAutoCategorized(true);
-    setPendingReceiptUrl(receiptUrl);
-    setPendingRawOcr(ocrResult.raw_text ?? null);
-
+    setIsAutoCategorized(true); setPendingReceiptUrl(receiptUrl); setPendingRawOcr(ocrResult.raw_text ?? null);
     formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   function resetScanner() {
-    stopStream();
-    setScannerMode("idle");
+    stopStream(); setScannerMode("idle");
     setCapturedImageUrl(null); setCapturedBase64(null); setCapturedBlob(null);
     setOcrResult(null); setOcrError(null);
     if (galleryInputRef.current) galleryInputRef.current.value = "";
   }
 
-  // ── Add Expense ────────────────────────────────────────────
   async function handleAddExpense(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const parsedAmount = Number(amount);
     if (!title.trim() || Number.isNaN(parsedAmount) || parsedAmount <= 0) return;
-
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
-
-    const { data, error } = await supabase
-      .from("expenses")
-      .insert({
-        user_id: user.id,
-        title: title.trim(),
-        category,
-        amount: parsedAmount,
-        merchant_name: merchantName.trim() || null,
-        notes: notes.trim() || null,
-        auto_categorized: isAutoCategorized,
-        receipt_image_url: pendingReceiptUrl,
-        raw_ocr_text: pendingRawOcr,
-      })
-      .select()
-      .single();
-
+    const { data, error } = await supabase.from("expenses").insert({ user_id: user.id, title: title.trim(), category, amount: parsedAmount, merchant_name: merchantName.trim() || null, notes: notes.trim() || null, auto_categorized: isAutoCategorized, receipt_image_url: pendingReceiptUrl, raw_ocr_text: pendingRawOcr }).select().single();
     if (!error && data) {
-      setExpenses((prev) => [data, ...prev]);
-      // Reset form
-      setTitle(""); setAmount(""); setCategory("Food");
-      setMerchantName(""); setNotes("");
-      setIsAutoCategorized(false);
-      setPendingReceiptUrl(null); setPendingRawOcr(null);
-      // Reset scanner too
+      setExpenses(prev => [data, ...prev]);
+      setTitle(""); setAmount(""); setCategory("Food"); setMerchantName(""); setNotes("");
+      setIsAutoCategorized(false); setPendingReceiptUrl(null); setPendingRawOcr(null);
       resetScanner();
     }
   }
 
   async function handleDeleteExpense(expenseId: string) {
-    const expense = expenses.find((e) => e.id === expenseId);
-
-    // Delete receipt image from storage if exists
+    const expense = expenses.find(e => e.id === expenseId);
     if (expense?.receipt_image_url) {
       const path = expense.receipt_image_url.split("/receipts/")[1];
       if (path) await supabase.storage.from("receipts").remove([path]);
     }
-
     const { error } = await supabase.from("expenses").delete().eq("id", expenseId);
-    if (!error) setExpenses((prev) => prev.filter((item) => item.id !== expenseId));
+    if (!error) setExpenses(prev => prev.filter(item => item.id !== expenseId));
   }
 
   async function handleBudgetChange(value: string) {
@@ -298,19 +339,12 @@ export default function PrototypePage() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
     const month = new Date().toISOString().slice(0, 7);
-    await supabase.from("budgets").upsert(
-      { user_id: user.id, monthly_budget: parsedBudget, month },
-      { onConflict: "user_id,month" }
-    );
+    await supabase.from("budgets").upsert({ user_id: user.id, monthly_budget: parsedBudget, month }, { onConflict: "user_id,month" });
   }
 
-  // ── Computed ───────────────────────────────────────────────
   const totals = useMemo(() => {
     const total = expenses.reduce((sum, item) => sum + item.amount, 0);
-    const byCategory = expenses.reduce<Record<ExpenseCategory, number>>(
-      (acc, item) => { acc[item.category] = (acc[item.category] || 0) + item.amount; return acc; },
-      { Food: 0, Transport: 0, Utilities: 0, Shopping: 0, Health: 0, Other: 0 },
-    );
+    const byCategory = expenses.reduce<Record<ExpenseCategory, number>>((acc, item) => { acc[item.category] = (acc[item.category] || 0) + item.amount; return acc; }, { Food: 0, Transport: 0, Utilities: 0, Shopping: 0, Health: 0, Other: 0 });
     const topEntry = Object.entries(byCategory).sort((a, b) => b[1] - a[1])[0];
     const average = expenses.length > 0 ? total / expenses.length : 0;
     return { total, byCategory, topCategory: topEntry?.[0] || "None", average };
@@ -319,434 +353,516 @@ export default function PrototypePage() {
   const budgetValue = Number(monthlyBudget) || 0;
   const budgetLeft = Math.max(budgetValue - totals.total, 0);
   const budgetUsage = budgetValue > 0 ? Math.min((totals.total / budgetValue) * 100, 100) : 0;
-  const budgetColor = budgetUsage >= 80 ? "bg-red-500" : budgetUsage >= 60 ? "bg-amber-400" : "bg-teal-500";
-
+  const budgetGrad = budgetUsage >= 80 ? "linear-gradient(90deg,#ef4444,#f87171)" : budgetUsage >= 60 ? "linear-gradient(90deg,#fb923c,#fbbf24)" : "linear-gradient(90deg,#14b8a6,#2dd4bf)";
   const now = new Date();
-  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-  const daysLeft = daysInMonth - now.getDate();
+  const daysLeft = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate() - now.getDate();
   const dailyCap = budgetLeft > 0 && daysLeft > 0 ? budgetLeft / daysLeft : 0;
 
-  const filteredExpenses = useMemo(
-    () => expenses.filter((item) => {
-      const matchCat = selectedCategory === "All" || item.category === selectedCategory;
-      const matchSearch = item.title.toLowerCase().includes(searchTerm.trim().toLowerCase()) ||
-        (item.merchant_name ?? "").toLowerCase().includes(searchTerm.trim().toLowerCase());
-      return matchCat && matchSearch;
-    }),
-    [expenses, searchTerm, selectedCategory],
-  );
+  const filteredExpenses = useMemo(() => expenses.filter(item => {
+    const matchCat = selectedCategory === "All" || item.category === selectedCategory;
+    const matchSearch = item.title.toLowerCase().includes(searchTerm.trim().toLowerCase()) || (item.merchant_name ?? "").toLowerCase().includes(searchTerm.trim().toLowerCase());
+    return matchCat && matchSearch;
+  }), [expenses, searchTerm, selectedCategory]);
 
-  // ── Styles ─────────────────────────────────────────────────
-  const cardClass = isDark
-    ? "border border-slate-800/70 bg-slate-900/75"
-    : "border border-slate-200 bg-white/90";
-  const inputClass = isDark
-    ? "w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 outline-none ring-teal-400 focus:ring-2"
-    : "w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none ring-teal-500 focus:ring-2";
-  const subtleText = isDark ? "text-slate-300" : "text-slate-600";
+  // ── Theme tokens ──────────────────────────────────────────
+  const glass = isDark
+    ? { background: "rgba(13,17,26,0.75)", border: "1px solid rgba(255,255,255,0.06)", backdropFilter: "blur(20px)" }
+    : { background: "rgba(255,255,255,0.85)", border: "1px solid rgba(0,0,0,0.07)", backdropFilter: "blur(20px)" };
+  const dropdownBg = isDark ? "#0f1623" : "#ffffff";
+  const dropdownBorder = isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)";
+  const dropdownHover = isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)";
+  const glassHover = isDark ? "rgba(255,255,255,0.025)" : "rgba(0,0,0,0.02)";
+  const tx = isDark ? "#e2e8f0" : "#0f172a";
+  const txSub = isDark ? "#94a3b8" : "#64748b";
+  const txMute = isDark ? "#475569" : "#94a3b8";
+  const inputBase: React.CSSProperties = {
+    width: "100%", padding: "0.7rem 0.9rem", borderRadius: 10, fontSize: "0.875rem",
+    background: isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.03)",
+    border: isDark ? "1px solid rgba(255,255,255,0.08)" : "1px solid rgba(0,0,0,0.1)",
+    color: tx, outline: "none", fontFamily: "inherit", transition: "border-color 0.2s, box-shadow 0.2s",
+  };
+
+  // Custom dropdown renderer
+  const CategoryDropdown = ({
+    value, onChange, open, setOpen, dropRef, filterMode = false,
+  }: {
+    value: string; onChange: (v: string) => void;
+    open: boolean; setOpen: (v: boolean) => void;
+    dropRef: React.RefObject<HTMLDivElement>; filterMode?: boolean;
+  }) => {
+    const options = filterMode ? ["All", ...categories] : categories;
+    const CatIcon = value !== "All" ? CATEGORY_ICON_COMPONENTS[value as ExpenseCategory] : null;
+    const catColor = value !== "All" ? CATEGORY_COLORS[value as ExpenseCategory] : txMute;
+
+    return (
+      <div ref={dropRef} style={{ position: "relative", width: "100%" }}>
+        <button type="button" onClick={() => setOpen(!open)}
+          style={{ ...inputBase, display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem", cursor: "pointer", userSelect: "none", textAlign: "left" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
+            {CatIcon && <CatIcon size={15} color={catColor} />}
+            {!CatIcon && filterMode && (
+              <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke={txMute} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" />
+                <line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" />
+              </svg>
+            )}
+            <span style={{ fontSize: "0.875rem", color: tx }}>{value}</span>
+          </div>
+          <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke={txMute} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+            style={{ transform: open ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s", flexShrink: 0 }}>
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </button>
+
+        {open && (
+          <div style={{
+            position: "absolute", top: "calc(100% + 6px)", left: 0, right: 0, zIndex: 100,
+            background: dropdownBg, border: `1px solid ${dropdownBorder}`,
+            borderRadius: 12, overflow: "hidden",
+            boxShadow: isDark ? "0 16px 40px rgba(0,0,0,0.6)" : "0 8px 24px rgba(0,0,0,0.12)",
+          }}>
+            {options.map(opt => {
+              const OptionIcon = opt !== "All" ? CATEGORY_ICON_COMPONENTS[opt as ExpenseCategory] : null;
+              const optColor = opt !== "All" ? CATEGORY_COLORS[opt as ExpenseCategory] : txMute;
+              const isActive = value === opt;
+              return (
+                <button key={opt} type="button"
+                  onClick={() => { onChange(opt); setOpen(false); }}
+                  style={{
+                    width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
+                    gap: "0.6rem", padding: "0.65rem 0.9rem",
+                    background: isActive ? (isDark ? "rgba(20,184,166,0.1)" : "rgba(20,184,166,0.07)") : "transparent",
+                    border: "none", cursor: "pointer", fontFamily: "inherit",
+                    transition: "background 0.12s",
+                  }}
+                  onMouseEnter={e => { if (!isActive) (e.currentTarget as HTMLButtonElement).style.background = dropdownHover; }}
+                  onMouseLeave={e => { if (!isActive) (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.65rem" }}>
+                    {OptionIcon
+                      ? <div style={{ width: 28, height: 28, borderRadius: 8, background: `${optColor}18`, display: "grid", placeItems: "center", flexShrink: 0 }}>
+                          <OptionIcon size={14} color={optColor} />
+                        </div>
+                      : <div style={{ width: 28, height: 28, borderRadius: 8, background: isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.05)", display: "grid", placeItems: "center", flexShrink: 0 }}>
+                          <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke={txMute} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" />
+                            <line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" />
+                          </svg>
+                        </div>
+                    }
+                    <span style={{ fontSize: "0.85rem", fontWeight: 500, color: isActive ? "#14b8a6" : tx }}>{opt}</span>
+                  </div>
+                  {isActive && <IconCheck size={14} color="#14b8a6" />}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   if (loadingData) {
     return (
-      <div className="flex min-h-[40vh] items-center justify-center">
-        <p className={subtleText}>Loading your data…</p>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "60vh", flexDirection: "column", gap: "1rem" }}>
+        <div style={{ position: "relative", width: 48, height: 48 }}>
+          <div style={{ position: "absolute", inset: 0, borderRadius: "50%", border: "2px solid rgba(20,184,166,0.15)", borderTopColor: "#14b8a6", animation: "spin 0.9s linear infinite" }} />
+          <div style={{ position: "absolute", inset: 8, borderRadius: "50%", border: "2px solid rgba(20,184,166,0.08)", borderBottomColor: "#2dd4bf", animation: "spin 1.4s linear infinite reverse" }} />
+        </div>
+        <p style={{ color: txMute, fontSize: "0.8rem", letterSpacing: "0.06em" }}>Loading dashboard…</p>
+        <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
       </div>
     );
   }
 
   return (
-    <div className="relative space-y-8">
-      {/* Header */}
-      <header className={`relative rounded-2xl p-6 shadow-xl backdrop-blur lg:p-8 ${cardClass}`}>
-        <p className="text-sm font-medium text-teal-500">Overview</p>
-        <h1 className="mt-2 text-2xl font-bold tracking-tight lg:text-3xl">Expense Dashboard</h1>
-        <p className={`mt-2 ${subtleText}`}>
-          Add expenses, manage your monthly budget, and scan receipts with AI-powered OCR.
-        </p>
-      </header>
+    <>
+      <style suppressHydrationWarning>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes scan { 0%{top:8%} 50%{top:88%} 100%{top:8%} }
+        @keyframes fadeSlideUp { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes pulse-dot { 0%,100%{box-shadow:0 0 0 0 rgba(20,184,166,0.4)} 50%{box-shadow:0 0 0 6px rgba(20,184,166,0)} }
 
-      {/* ── Receipt Scanner ── */}
-      <section className={`rounded-2xl p-6 shadow-xl backdrop-blur lg:p-7 ${cardClass}`}>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h2 className="text-lg font-semibold">Scan a Receipt</h2>
-            <p className={`mt-1 text-sm ${subtleText}`}>
-              Use your live camera or upload a photo. Gemini AI extracts and categorizes your expense automatically.
-            </p>
-          </div>
-          <span className={`shrink-0 self-start rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${isDark ? "border-teal-700/60 text-teal-300" : "border-teal-300 text-teal-700"}`}>
-            AI-Powered OCR
-          </span>
+        .dash-card { animation: fadeSlideUp 0.45s cubic-bezier(0.22,1,0.36,1) both; }
+        .dash-card:nth-child(1){animation-delay:0.05s} .dash-card:nth-child(2){animation-delay:0.1s}
+        .dash-card:nth-child(3){animation-delay:0.15s} .dash-card:nth-child(4){animation-delay:0.2s}
+
+        .dash-input:focus { border-color: rgba(20,184,166,0.5) !important; box-shadow: 0 0 0 3px rgba(20,184,166,0.08) !important; }
+        .dash-btn-primary { background: linear-gradient(135deg,#14b8a6,#0d9488); transition: transform 0.18s cubic-bezier(0.22,1,0.36,1), box-shadow 0.18s; }
+        .dash-btn-primary:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(20,184,166,0.35); }
+        .dash-btn-primary:active:not(:disabled) { transform: translateY(0); }
+        .dash-btn-outline { transition: background 0.15s, border-color 0.15s; }
+        .dash-btn-outline:hover { background: ${isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)"} !important; }
+
+        .expense-row { transition: background 0.15s; border-radius: 12px; }
+        .expense-row:hover { background: ${glassHover} !important; }
+        .del-btn { transition: background 0.15s, color 0.15s, border-color 0.15s; }
+        .del-btn:hover { background: rgba(239,68,68,0.1) !important; color: #ef4444 !important; border-color: rgba(239,68,68,0.3) !important; }
+
+        .cat-chip { transition: background 0.15s, color 0.15s, border-color 0.15s; cursor: pointer; }
+        .cat-chip:hover { border-color: rgba(20,184,166,0.4) !important; color: #14b8a6 !important; }
+        .cat-chip.active { background: rgba(20,184,166,0.12) !important; border-color: rgba(20,184,166,0.35) !important; color: #14b8a6 !important; }
+
+        .scroll-list::-webkit-scrollbar { width: 4px; }
+        .scroll-list::-webkit-scrollbar-thumb { background: rgba(100,116,139,0.2); border-radius: 999px; }
+
+        @media (max-width: 900px) {
+          .dash-cols-4 { grid-template-columns: 1fr 1fr !important; }
+          .dash-cols-main { grid-template-columns: 1fr !important; }
+        }
+        @media (max-width: 540px) { .dash-cols-4 { grid-template-columns: 1fr !important; } }
+      `}</style>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+
+        {/* ── Stat Cards ── */}
+        <div className="dash-cols-4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "1rem" }}>
+          {[
+            { label: "Total Spent", value: pesoFormatter.format(totals.total), Icon: IconSpend, accent: "#14b8a6" },
+            { label: "Records", value: String(expenses.length), Icon: IconRecords, accent: "#6366f1" },
+            { label: "Top Category", value: totals.topCategory, Icon: IconTrophy, accent: "#fb923c" },
+            { label: "Avg Expense", value: pesoFormatter.format(totals.average), Icon: IconAvg, accent: "#ec4899" },
+          ].map(({ label, value, Icon, accent }) => (
+            <div key={label} className="dash-card" style={{ ...glass, borderRadius: 18, padding: "1.25rem 1.4rem", position: "relative", overflow: "hidden" }}>
+              <div style={{ position: "absolute", top: -20, right: -20, width: 80, height: 80, borderRadius: "50%", background: `radial-gradient(circle, ${accent}22 0%, transparent 70%)`, pointerEvents: "none" }} />
+              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: "0.8rem" }}>
+                <p style={{ fontSize: "0.7rem", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: txMute }}>{label}</p>
+                <div style={{ width: 32, height: 32, borderRadius: 9, background: `${accent}18`, border: `1px solid ${accent}30`, display: "grid", placeItems: "center", flexShrink: 0 }}>
+                  <Icon size={16} color={accent} />
+                </div>
+              </div>
+              <p style={{ fontSize: "1.45rem", fontWeight: 700, color: tx, letterSpacing: "-0.02em" }}>{value}</p>
+            </div>
+          ))}
         </div>
 
-        <canvas ref={canvasRef} className="hidden" />
-        <input ref={galleryInputRef} type="file" accept="image/*" className="sr-only"
-          onChange={(e) => { handleGalleryPick(e.target.files?.[0]); e.target.value = ""; }} />
-
-        <div className="mt-5 grid gap-5 lg:grid-cols-2">
-          {/* Camera / preview */}
-          <div className={`relative flex min-h-[260px] flex-col items-center justify-center overflow-hidden rounded-xl border-2 border-dashed ${isDark ? "border-slate-600 bg-slate-950/40" : "border-slate-300 bg-slate-50/80"}`}>
-            {scannerMode === "idle" && (
-              <div className="flex flex-col items-center gap-2 p-6 text-center">
-                <span className="text-4xl">📷</span>
-                <p className={`text-sm font-medium ${subtleText}`}>No receipt selected</p>
-                <p className={`text-xs ${subtleText}`}>Start the live camera or upload an image</p>
+        {/* ── OCR Scanner ── */}
+        <div style={{ ...glass, borderRadius: 22, padding: "1.6rem", position: "relative", overflow: "hidden" }}>
+          <div style={{ position: "absolute", inset: 0, backgroundImage: "radial-gradient(rgba(20,184,166,0.05) 1px, transparent 1px)", backgroundSize: "28px 28px", pointerEvents: "none", borderRadius: 22 }} />
+          <div style={{ position: "relative", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "1rem", marginBottom: "1.4rem" }}>
+            <div>
+              <div style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.5rem" }}>
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#14b8a6", display: "inline-block", animation: "pulse-dot 2s ease-in-out infinite" }} />
+                <p style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "#14b8a6" }}>OCR · AI-Powered</p>
               </div>
-            )}
-
-            <video ref={videoRef}
-              className={`h-full w-full object-cover ${scannerMode === "live" ? "block" : "hidden"}`}
-              playsInline muted />
-
-            {(scannerMode === "captured" || scannerMode === "processing") && capturedImageUrl && (
-              <img src={capturedImageUrl} alt="Captured receipt" className="max-h-64 w-full object-contain" />
-            )}
-
-            {scannerMode === "processing" && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 rounded-xl bg-black/60 backdrop-blur-sm">
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-teal-400 border-t-transparent" />
-                <p className="text-sm font-semibold text-white">Reading receipt…</p>
-              </div>
-            )}
-
-            {scannerMode === "live" && (
-              <div className="pointer-events-none absolute inset-0">
-                <div className="absolute left-0 right-0 h-0.5 animate-[scan_2s_linear_infinite] bg-teal-400/70" />
-                <div className="absolute inset-4 rounded-lg border-2 border-teal-400/50" />
-              </div>
-            )}
+              <h2 style={{ fontSize: "1.2rem", fontWeight: 700, color: tx, margin: 0 }}>Scan a Receipt</h2>
+              <p style={{ fontSize: "0.82rem", color: txSub, marginTop: "0.3rem" }}>Use your live camera or upload a photo. Gemini AI extracts and categorizes automatically.</p>
+            </div>
+            <span style={{ flexShrink: 0, padding: "0.3rem 0.8rem", borderRadius: 999, fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", background: "rgba(20,184,166,0.1)", border: "1px solid rgba(20,184,166,0.25)", color: "#14b8a6" }}>Gemini Vision</span>
           </div>
 
-          {/* Controls + extracted data */}
-          <div className="space-y-4">
-            <div className="flex flex-wrap gap-2">
-              {scannerMode === "idle" && (<>
-                <button type="button" onClick={startLiveCamera}
-                  className="rounded-lg bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-500">
-                  📷 Live Camera
-                </button>
-                <button type="button" onClick={() => galleryInputRef.current?.click()}
-                  className={`rounded-lg px-4 py-2.5 text-sm font-semibold transition ${isDark ? "border border-slate-600 text-slate-100 hover:bg-slate-800" : "border border-slate-300 text-slate-800 hover:bg-slate-100"}`}>
-                  🖼 Upload Image
-                </button>
-              </>)}
+          <canvas ref={canvasRef} style={{ display: "none" }} />
+          <input ref={galleryInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={e => { handleGalleryPick(e.target.files?.[0]); e.target.value = ""; }} />
 
-              {scannerMode === "live" && (<>
-                <button type="button" onClick={captureFrame}
-                  className="rounded-lg bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-500">
-                  📸 Capture
-                </button>
-                <button type="button" onClick={resetScanner}
-                  className={`rounded-lg px-4 py-2.5 text-sm font-semibold ${isDark ? "text-red-300 hover:bg-red-950/50" : "text-red-700 hover:bg-red-50"}`}>
-                  Cancel
-                </button>
-              </>)}
-
-              {scannerMode === "captured" && (<>
-                <button type="button" onClick={runOCR}
-                  className="rounded-lg bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-500">
-                  ✨ Read Receipt
-                </button>
-                <button type="button" onClick={startLiveCamera}
-                  className={`rounded-lg px-4 py-2.5 text-sm font-semibold transition ${isDark ? "border border-slate-600 text-slate-100 hover:bg-slate-800" : "border border-slate-300 text-slate-800 hover:bg-slate-100"}`}>
-                  Retake
-                </button>
-                <button type="button" onClick={resetScanner}
-                  className={`rounded-lg px-4 py-2.5 text-sm font-semibold ${isDark ? "text-red-300 hover:bg-red-950/50" : "text-red-700 hover:bg-red-50"}`}>
-                  Clear
-                </button>
-              </>)}
-
+          <div className="dash-cols-main" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.2rem" }}>
+            {/* Preview */}
+            <div style={{ position: "relative", minHeight: 260, borderRadius: 16, border: `1.5px dashed ${isDark ? "rgba(20,184,166,0.2)" : "rgba(20,184,166,0.25)"}`, background: isDark ? "rgba(0,0,0,0.25)" : "rgba(20,184,166,0.02)", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+              {scannerMode === "idle" && (
+                <div style={{ textAlign: "center", padding: "2rem" }}>
+                  <div style={{ width: 56, height: 56, borderRadius: 16, background: "rgba(20,184,166,0.1)", border: "1px solid rgba(20,184,166,0.2)", display: "grid", placeItems: "center", margin: "0 auto 1rem" }}>
+                    <IconCamera size={26} color="#14b8a6" />
+                  </div>
+                  <p style={{ fontSize: "0.875rem", fontWeight: 600, color: txSub }}>No receipt selected</p>
+                  <p style={{ fontSize: "0.75rem", color: txMute, marginTop: "0.25rem" }}>Start the live camera or upload an image</p>
+                </div>
+              )}
+              <video ref={videoRef} style={{ width: "100%", height: "100%", objectFit: "cover", display: scannerMode === "live" ? "block" : "none" }} playsInline muted />
+              {(scannerMode === "captured" || scannerMode === "processing") && capturedImageUrl && (
+                <img src={capturedImageUrl} alt="Receipt" style={{ maxHeight: 280, width: "100%", objectFit: "contain" }} />
+              )}
               {scannerMode === "processing" && (
-                <button type="button" disabled
-                  className="cursor-not-allowed rounded-lg bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white opacity-60">
-                  Analyzing…
-                </button>
+                <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.7)", backdropFilter: "blur(6px)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "1rem", borderRadius: 14 }}>
+                  <div style={{ position: "relative", width: 44, height: 44 }}>
+                    <div style={{ position: "absolute", inset: 0, borderRadius: "50%", border: "2px solid rgba(20,184,166,0.2)", borderTopColor: "#14b8a6", animation: "spin 0.9s linear infinite" }} />
+                    <div style={{ position: "absolute", inset: 8, borderRadius: "50%", border: "2px solid rgba(20,184,166,0.1)", borderBottomColor: "#2dd4bf", animation: "spin 1.3s linear infinite reverse" }} />
+                  </div>
+                  <div style={{ textAlign: "center" }}>
+                    <p style={{ fontSize: "0.875rem", fontWeight: 700, color: "#fff" }}>Analyzing receipt…</p>
+                    <p style={{ fontSize: "0.72rem", color: "rgba(255,255,255,0.5)", marginTop: "0.2rem" }}>Gemini is reading the data</p>
+                  </div>
+                </div>
+              )}
+              {scannerMode === "live" && (
+                <div style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
+                  <div style={{ position: "absolute", left: "8%", right: "8%", height: 2, background: "linear-gradient(90deg,transparent,#14b8a6,transparent)", animation: "scan 2s ease-in-out infinite", filter: "blur(1px)" }} />
+                  <div style={{ position: "absolute", inset: 12, border: "1.5px solid rgba(20,184,166,0.45)", borderRadius: 12 }} />
+                </div>
               )}
             </div>
 
-            {ocrError && (
-              <div className={`rounded-lg border p-3 text-sm ${isDark ? "border-red-800 bg-red-950/40 text-red-300" : "border-red-200 bg-red-50 text-red-700"}`}>
-                ⚠️ {ocrError}
-              </div>
-            )}
-
-            {/* Extracted data panel */}
-            <div className={`rounded-xl border p-4 ${isDark ? "border-slate-700 bg-slate-900/50" : "border-slate-200 bg-white"}`}>
-              <div className="flex items-center justify-between">
-                <p className={`text-xs font-semibold uppercase tracking-wide ${isDark ? "text-teal-400" : "text-teal-600"}`}>
-                  Extracted Data
-                </p>
-                {ocrResult && (
-                  <span className={`text-xs font-medium ${ocrResult.confidence >= 70 ? "text-teal-500" : "text-amber-500"}`}>
-                    {ocrResult.confidence}% confidence
-                  </span>
+            {/* Controls + extracted data */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
+                {scannerMode === "idle" && (<>
+                  <button type="button" onClick={startLiveCamera} className="dash-btn-primary" style={{ display: "inline-flex", alignItems: "center", gap: "0.45rem", padding: "0.6rem 1.1rem", borderRadius: 10, border: "none", color: "#fff", fontSize: "0.82rem", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                    <IconCamera size={15} color="#fff" /> Live Camera
+                  </button>
+                  <button type="button" onClick={() => galleryInputRef.current?.click()} className="dash-btn-outline" style={{ display: "inline-flex", alignItems: "center", gap: "0.45rem", padding: "0.6rem 1.1rem", borderRadius: 10, background: "transparent", border: isDark ? "1px solid rgba(255,255,255,0.1)" : "1px solid rgba(0,0,0,0.12)", color: txSub, fontSize: "0.82rem", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+                    <IconUpload size={15} color={txSub} /> Upload Image
+                  </button>
+                </>)}
+                {scannerMode === "live" && (<>
+                  <button type="button" onClick={captureFrame} className="dash-btn-primary" style={{ display: "inline-flex", alignItems: "center", gap: "0.45rem", padding: "0.6rem 1.1rem", borderRadius: 10, border: "none", color: "#fff", fontSize: "0.82rem", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                    <IconCapture size={15} color="#fff" /> Capture
+                  </button>
+                  <button type="button" onClick={resetScanner} className="dash-btn-outline" style={{ display: "inline-flex", alignItems: "center", gap: "0.45rem", padding: "0.6rem 1rem", borderRadius: 10, background: "transparent", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171", fontSize: "0.82rem", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+                </>)}
+                {scannerMode === "captured" && (<>
+                  <button type="button" onClick={runOCR} className="dash-btn-primary" style={{ display: "inline-flex", alignItems: "center", gap: "0.45rem", padding: "0.6rem 1.1rem", borderRadius: 10, border: "none", color: "#fff", fontSize: "0.82rem", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                    <IconScan size={15} color="#fff" /> Read Receipt
+                  </button>
+                  <button type="button" onClick={startLiveCamera} className="dash-btn-outline" style={{ display: "inline-flex", alignItems: "center", gap: "0.45rem", padding: "0.6rem 1rem", borderRadius: 10, background: "transparent", border: isDark ? "1px solid rgba(255,255,255,0.1)" : "1px solid rgba(0,0,0,0.12)", color: txSub, fontSize: "0.82rem", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Retake</button>
+                  <button type="button" onClick={resetScanner} className="dash-btn-outline" style={{ display: "inline-flex", alignItems: "center", gap: "0.45rem", padding: "0.6rem 1rem", borderRadius: 10, background: "transparent", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171", fontSize: "0.82rem", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Clear</button>
+                </>)}
+                {scannerMode === "processing" && (
+                  <button type="button" disabled style={{ padding: "0.6rem 1.1rem", borderRadius: 10, background: "rgba(20,184,166,0.2)", border: "none", color: "#14b8a6", fontSize: "0.82rem", fontWeight: 700, cursor: "not-allowed", fontFamily: "inherit" }}>Analyzing…</button>
                 )}
               </div>
 
-              <dl className="mt-3 space-y-2 text-sm">
-                {([
-                  ["Merchant", ocrResult?.merchant ?? "—"],
-                  ["Date", ocrResult?.date ?? "—"],
-                  ["Total (PHP)", ocrResult?.amount != null ? pesoFormatter.format(ocrResult.amount) : "—"],
-                  ["Category", ocrResult?.category ?? "—"],
-                ] as [string, string][]).map(([k, v]) => (
-                  <div key={k} className={`flex justify-between gap-4 border-b border-dotted pb-2 last:border-0 ${isDark ? "border-slate-500/30" : "border-slate-300"}`}>
-                    <dt className={subtleText}>{k}</dt>
-                    <dd className={`font-mono ${v === "—" ? "text-slate-500" : "text-teal-500 font-semibold"}`}>{v}</dd>
-                  </div>
-                ))}
-              </dl>
-
-              {ocrResult?.items && ocrResult.items.length > 0 && (
-                <div className="mt-3">
-                  <p className={`mb-1 text-xs font-semibold uppercase tracking-wide ${isDark ? "text-slate-400" : "text-slate-500"}`}>Items</p>
-                  <ul className={`space-y-0.5 text-xs ${subtleText}`}>
-                    {ocrResult.items.slice(0, 5).map((item, i) => (
-                      <li key={i} className="truncate">• {item}</li>
-                    ))}
-                  </ul>
+              {ocrError && (
+                <div style={{ padding: "0.75rem 1rem", borderRadius: 10, background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", fontSize: "0.8rem", color: "#f87171", display: "flex", gap: "0.5rem", alignItems: "flex-start" }}>
+                  <IconWarning size={15} color="#f87171" /><span>{ocrError}</span>
                 </div>
               )}
 
-              <button type="button" onClick={applyOCRToForm}
-                disabled={!ocrResult || ocrResult.confidence === 0}
-                className={`mt-4 w-full rounded-lg py-2.5 text-sm font-semibold transition ${
-                  ocrResult && ocrResult.confidence > 0
-                    ? "bg-teal-600 text-white hover:bg-teal-500"
-                    : `opacity-50 cursor-not-allowed ${isDark ? "bg-slate-700 text-slate-300" : "bg-slate-200 text-slate-600"}`
-                }`}>
-                {ocrResult ? "✅ Apply to Expense Form" : "Apply to Expense Form"}
-              </button>
+              <div style={{ flex: 1, borderRadius: 14, background: isDark ? "rgba(255,255,255,0.025)" : "rgba(0,0,0,0.02)", border: isDark ? "1px solid rgba(255,255,255,0.06)" : "1px solid rgba(0,0,0,0.07)", padding: "1rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <p style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "#14b8a6" }}>Extracted Data</p>
+                  {ocrResult && (
+                    <span style={{ fontSize: "0.68rem", fontWeight: 700, padding: "0.15rem 0.5rem", borderRadius: 999, background: ocrResult.confidence >= 70 ? "rgba(20,184,166,0.1)" : "rgba(251,146,60,0.1)", color: ocrResult.confidence >= 70 ? "#14b8a6" : "#fb923c", border: `1px solid ${ocrResult.confidence >= 70 ? "rgba(20,184,166,0.3)" : "rgba(251,146,60,0.3)"}` }}>
+                      {ocrResult.confidence}% match
+                    </span>
+                  )}
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+                  {([["Merchant", ocrResult?.merchant ?? "—"], ["Date", ocrResult?.date ?? "—"], ["Total (PHP)", ocrResult?.amount != null ? pesoFormatter.format(ocrResult.amount) : "—"], ["Category", ocrResult?.category ?? "—"]] as [string, string][]).map(([k, v]) => (
+                    <div key={k} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0.4rem 0", borderBottom: isDark ? "1px solid rgba(255,255,255,0.04)" : "1px solid rgba(0,0,0,0.05)" }}>
+                      <span style={{ fontSize: "0.78rem", color: txMute }}>{k}</span>
+                      <span style={{ fontSize: "0.78rem", fontWeight: 600, color: v === "—" ? txMute : "#14b8a6" }}>{v}</span>
+                    </div>
+                  ))}
+                </div>
+                <button type="button" onClick={applyOCRToForm} disabled={!ocrResult || ocrResult.confidence === 0} className="dash-btn-primary"
+                  style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "0.45rem", width: "100%", padding: "0.7rem", borderRadius: 10, border: "none", fontWeight: 700, fontSize: "0.82rem", cursor: ocrResult && ocrResult.confidence > 0 ? "pointer" : "not-allowed", fontFamily: "inherit", background: ocrResult && ocrResult.confidence > 0 ? undefined : isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.06)", color: ocrResult && ocrResult.confidence > 0 ? "#fff" : txMute, opacity: ocrResult && ocrResult.confidence > 0 ? 1 : 0.5 }}>
+                  {ocrResult && ocrResult.confidence > 0 && <IconCheck size={14} color="#fff" />}
+                  {ocrResult ? "Apply to Expense Form" : "Apply to Expense Form"}
+                </button>
+              </div>
             </div>
           </div>
         </div>
-      </section>
 
-      {/* ── Stats ── */}
-      <section className="grid gap-6 lg:grid-cols-4">
-        {[
-          { label: "Total Expenses", value: pesoFormatter.format(totals.total) },
-          { label: "Number of Records", value: expenses.length },
-          { label: "Top Category", value: totals.topCategory },
-          { label: "Average Expense", value: pesoFormatter.format(totals.average) },
-        ].map((s) => (
-          <article key={s.label} className={`rounded-2xl p-6 shadow-xl backdrop-blur ${cardClass}`}>
-            <p className={`text-sm ${subtleText}`}>{s.label}</p>
-            <p className="mt-2 text-3xl font-semibold">{s.value}</p>
-          </article>
-        ))}
-      </section>
+        {/* ── Add Expense + Records ── */}
+        <div className="dash-cols-main" ref={formRef} style={{ display: "grid", gridTemplateColumns: "2fr 3fr", gap: "1.2rem" }}>
 
-      {/* ── Add Expense + Records ── */}
-      <section ref={formRef} className="grid gap-6 lg:grid-cols-5">
-        <form onSubmit={handleAddExpense} className={`rounded-2xl p-6 shadow-xl backdrop-blur lg:col-span-2 lg:p-7 ${cardClass}`}>
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold">Add Expense</h2>
-            {isAutoCategorized && (
-              <span className="rounded-full bg-teal-600/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-teal-500 border border-teal-600/30">
-                AI Filled
-              </span>
-            )}
-          </div>
-
-          <div className="mt-4 space-y-4">
-            <div>
-              <label className="mb-1 block text-sm font-medium">Title <span className="text-red-400">*</span></label>
-              <input value={title} onChange={(e) => setTitle(e.target.value)} className={inputClass} placeholder="e.g. Dinner at Jollibee" />
-            </div>
-
-            <div>
-              <label className="mb-1 block text-sm font-medium">Merchant Name</label>
-              <input value={merchantName} onChange={(e) => setMerchantName(e.target.value)} className={inputClass} placeholder="e.g. Jollibee SM Davao" />
-            </div>
-
-            <div>
-              <label className="mb-1 block text-sm font-medium">Category</label>
-              <select value={category} onChange={(e) => { setCategory(e.target.value as ExpenseCategory); setIsAutoCategorized(false); }} className={inputClass}>
-                {categories.map((o) => <option key={o}>{o}</option>)}
-              </select>
-            </div>
-
-            <div>
-              <label className="mb-1 block text-sm font-medium">Amount (PHP) <span className="text-red-400">*</span></label>
-              <input type="number" min="0.01" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} className={inputClass} placeholder="0.00" />
-            </div>
-
-            <div>
-              <label className="mb-1 block text-sm font-medium">Notes</label>
-              <textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} className={`${inputClass} resize-none`} placeholder="Optional notes or item list…" />
-            </div>
-
-            <div>
-              <label className="mb-1 block text-sm font-medium">Monthly Budget (PHP)</label>
-              <input type="number" min="0" step="1" value={monthlyBudget} onChange={(e) => handleBudgetChange(e.target.value)} className={inputClass} placeholder="10000" />
-            </div>
-
-            {pendingReceiptUrl && (
-              <div className={`flex items-center gap-2 rounded-lg border p-2 text-xs ${isDark ? "border-teal-800 bg-teal-950/30 text-teal-400" : "border-teal-200 bg-teal-50 text-teal-700"}`}>
-                <span>🧾</span>
-                <span>Receipt image ready to attach</span>
+          {/* Add Expense Form */}
+          <form onSubmit={handleAddExpense} style={{ ...glass, borderRadius: 22, padding: "1.6rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.25rem" }}>
+              <div>
+                <h2 style={{ fontSize: "1.05rem", fontWeight: 700, color: tx, margin: 0 }}>Add Expense</h2>
+                <p style={{ fontSize: "0.72rem", color: txMute, marginTop: "0.15rem" }}>Record a new transaction</p>
               </div>
-            )}
-
-            <button type="submit"
-              className="w-full rounded-md bg-teal-600 px-4 py-2 font-medium text-white transition hover:bg-teal-500">
-              Add Expense
-            </button>
-          </div>
-        </form>
-
-        {/* Records */}
-        <article className={`rounded-2xl p-6 shadow-xl backdrop-blur lg:col-span-3 lg:p-7 ${cardClass}`}>
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div>
-              <h2 className="text-lg font-semibold">Expense Records</h2>
-              {filteredExpenses.length !== expenses.length && (
-                <p className={`text-xs ${subtleText}`}>Showing {filteredExpenses.length} of {expenses.length}</p>
+              {isAutoCategorized && (
+                <span style={{ display: "inline-flex", alignItems: "center", gap: "0.3rem", padding: "0.25rem 0.65rem", borderRadius: 999, fontSize: "0.65rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", background: "rgba(20,184,166,0.12)", border: "1px solid rgba(20,184,166,0.3)", color: "#14b8a6" }}>
+                  <IconScan size={11} color="#14b8a6" /> AI Filled
+                </span>
               )}
             </div>
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Search title or merchant" className={inputClass} />
-              <select value={selectedCategory} onChange={(e) => setSelectedCategory(e.target.value as ExpenseCategory | "All")} className={inputClass}>
-                <option>All</option>{categories.map((o) => <option key={o}>{o}</option>)}
-              </select>
-            </div>
-          </div>
 
-          <div className="mt-4 space-y-2">
-            {filteredExpenses.map((item) => (
-              <div key={item.id} className={`rounded-lg border transition-all ${isDark ? "border-slate-800 bg-slate-900/40" : "border-slate-200"}`}>
-                {/* Main row */}
-                <div className="flex items-center justify-between p-3">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${CATEGORY_COLORS[item.category]}`} />
-                    <div className="min-w-0">
-                      <p className="font-medium truncate">{item.title}</p>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <p className={`text-xs ${subtleText}`}>{item.category}</p>
-                        {item.merchant_name && (
-                          <p className={`text-xs ${subtleText}`}>· {item.merchant_name}</p>
-                        )}
-                        {item.created_at && (
-                          <p className={`text-xs ${subtleText}`}>
-                            · {new Date(item.created_at).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })}
-                          </p>
-                        )}
-                        {item.auto_categorized && (
-                          <span className="rounded-full bg-teal-600/20 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-teal-500">
-                            AI
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0 ml-2">
-                    <p className="font-semibold">{pesoFormatter.format(item.amount)}</p>
-                    {(item.notes || item.receipt_image_url) && (
-                      <button type="button"
-                        onClick={() => setExpandedId(expandedId === item.id ? null : item.id)}
-                        className={`rounded px-1.5 py-0.5 text-xs transition ${isDark ? "text-slate-400 hover:bg-slate-800" : "text-slate-500 hover:bg-slate-100"}`}>
-                        {expandedId === item.id ? "▲" : "▼"}
-                      </button>
-                    )}
-                    <button type="button" onClick={() => handleDeleteExpense(item.id)}
-                      className="rounded-md border border-red-200 px-2 py-1 text-xs font-medium text-red-600 transition hover:bg-red-50">
-                      Delete
-                    </button>
-                  </div>
-                </div>
-
-                {/* Expanded details */}
-                {expandedId === item.id && (
-                  <div className={`border-t px-4 py-3 space-y-2 ${isDark ? "border-slate-800" : "border-slate-100"}`}>
-                    {item.notes && (
-                      <div>
-                        <p className={`text-xs font-semibold uppercase tracking-wide mb-0.5 ${isDark ? "text-slate-400" : "text-slate-500"}`}>Notes</p>
-                        <p className={`text-sm ${subtleText}`}>{item.notes}</p>
-                      </div>
-                    )}
-                    {item.receipt_image_url && (
-                      <div>
-                        <p className={`text-xs font-semibold uppercase tracking-wide mb-1 ${isDark ? "text-slate-400" : "text-slate-500"}`}>Receipt</p>
-                        <a href={item.receipt_image_url} target="_blank" rel="noopener noreferrer">
-                          <img src={item.receipt_image_url} alt="Receipt" className="max-h-40 rounded-lg object-contain border border-slate-300" />
-                        </a>
-                      </div>
-                    )}
-                  </div>
-                )}
+            {[
+              { label: "Title *", field: title, set: setTitle, placeholder: "e.g. Dinner at Jollibee", type: "text" },
+              { label: "Merchant Name", field: merchantName, set: setMerchantName, placeholder: "e.g. Jollibee SM Davao", type: "text" },
+            ].map(({ label, field, set, placeholder, type }) => (
+              <div key={label}>
+                <label style={{ display: "block", fontSize: "0.72rem", fontWeight: 600, color: txMute, marginBottom: "0.35rem", letterSpacing: "0.04em" }}>{label}</label>
+                <input className="dash-input" type={type} value={field} onChange={e => set(e.target.value)} placeholder={placeholder} style={inputBase} />
               </div>
             ))}
 
-            {filteredExpenses.length === 0 && (
-              <p className={`rounded-lg border border-dashed p-5 text-center text-sm ${isDark ? "border-slate-700 text-slate-400" : "border-slate-300 text-slate-500"}`}>
-                No expense records match your current filters.
-              </p>
+            {/* Custom category dropdown */}
+            <div>
+              <label style={{ display: "block", fontSize: "0.72rem", fontWeight: 600, color: txMute, marginBottom: "0.35rem", letterSpacing: "0.04em" }}>Category</label>
+              <CategoryDropdown
+                value={category} onChange={v => { setCategory(v as ExpenseCategory); setIsAutoCategorized(false); }}
+                open={categoryDropdownOpen} setOpen={setCategoryDropdownOpen} dropRef={categoryDropdownRef}
+              />
+            </div>
+
+            <div>
+              <label style={{ display: "block", fontSize: "0.72rem", fontWeight: 600, color: txMute, marginBottom: "0.35rem", letterSpacing: "0.04em" }}>Amount (PHP) *</label>
+              <input className="dash-input" type="number" min="0.01" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00" style={inputBase} />
+            </div>
+
+            <div>
+              <label style={{ display: "block", fontSize: "0.72rem", fontWeight: 600, color: txMute, marginBottom: "0.35rem", letterSpacing: "0.04em" }}>Notes</label>
+              <textarea className="dash-input" rows={2} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional notes…" style={{ ...inputBase, resize: "none" }} />
+            </div>
+
+            <div>
+              <label style={{ display: "block", fontSize: "0.72rem", fontWeight: 600, color: txMute, marginBottom: "0.35rem", letterSpacing: "0.04em" }}>Monthly Budget (PHP)</label>
+              <input className="dash-input" type="number" min="0" step="1" value={monthlyBudget} onChange={e => handleBudgetChange(e.target.value)} placeholder="10000" style={inputBase} />
+            </div>
+
+            {pendingReceiptUrl && (
+              <div style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", padding: "0.6rem 0.8rem", borderRadius: 10, background: "rgba(20,184,166,0.08)", border: "1px solid rgba(20,184,166,0.2)", fontSize: "0.78rem", color: "#14b8a6" }}>
+                <IconReceipt size={14} color="#14b8a6" /> Receipt image ready to attach
+              </div>
             )}
-          </div>
-        </article>
-      </section>
 
-      {/* ── Budget Health + Category Breakdown ── */}
-      <section className="grid gap-6 lg:grid-cols-5">
-        <article className={`rounded-2xl p-6 shadow-xl backdrop-blur lg:col-span-2 ${cardClass}`}>
-          <h2 className="text-lg font-semibold">Budget Health</h2>
-          <p className={`mt-1 text-sm ${subtleText}`}>Remaining budget this month</p>
-          <p className={`mt-3 text-3xl font-semibold ${budgetUsage >= 80 ? "text-red-400" : "text-teal-500"}`}>
-            {pesoFormatter.format(budgetLeft)}
-          </p>
-          <div className={`mt-4 h-3 w-full overflow-hidden rounded-full ${isDark ? "bg-slate-800" : "bg-slate-200"}`}>
-            <div className={`h-full rounded-full transition-all ${budgetColor}`} style={{ width: `${budgetUsage}%` }} />
-          </div>
-          <p className={`mt-2 text-sm ${subtleText}`}>{budgetUsage.toFixed(0)}% used · {pesoFormatter.format(budgetValue)} budget</p>
-          <div className={`mt-4 grid grid-cols-2 gap-3 rounded-xl p-3 ${isDark ? "bg-slate-800/50" : "bg-slate-50"}`}>
-            <div>
-              <p className={`text-xs ${subtleText}`}>Days left</p>
-              <p className="text-lg font-semibold">{daysLeft}d</p>
-            </div>
-            <div>
-              <p className={`text-xs ${subtleText}`}>Daily cap</p>
-              <p className="text-lg font-semibold text-teal-500">{pesoFormatter.format(dailyCap)}</p>
-            </div>
-          </div>
-        </article>
+            <button type="submit" className="dash-btn-primary" style={{ width: "100%", padding: "0.8rem", borderRadius: 11, border: "none", color: "#fff", fontSize: "0.875rem", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", marginTop: "0.25rem" }}>
+              + Add Expense
+            </button>
+          </form>
 
-        <article className={`rounded-2xl p-6 shadow-xl backdrop-blur lg:col-span-3 ${cardClass}`}>
-          <h2 className="text-lg font-semibold">Category Breakdown</h2>
-          <div className="mt-4 space-y-3">
-            {Object.entries(totals.byCategory)
-              .sort((a, b) => b[1] - a[1])
-              .filter(([, value]) => value > 0 || totals.total === 0)
-              .map(([name, value]) => {
-                const width = totals.total > 0 ? (value / totals.total) * 100 : 0;
-                const color = CATEGORY_COLORS[name as ExpenseCategory] ?? "bg-slate-500";
+          {/* Records */}
+          <div style={{ ...glass, borderRadius: 22, padding: "1.6rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
+            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "flex-start", justifyContent: "space-between", gap: "0.75rem" }}>
+              <div>
+                <h2 style={{ fontSize: "1.05rem", fontWeight: 700, color: tx, margin: 0 }}>Expense Records</h2>
+                <p style={{ fontSize: "0.72rem", color: txMute, marginTop: "0.15rem" }}>
+                  {filteredExpenses.length !== expenses.length ? `Showing ${filteredExpenses.length} of ${expenses.length}` : `${expenses.length} total`}
+                </p>
+              </div>
+              <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                {/* Search */}
+                <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
+                  <span style={{ position: "absolute", left: "0.7rem", pointerEvents: "none" }}>
+                    <IconSearch size={14} color={txMute} />
+                  </span>
+                  <input className="dash-input" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Search…" style={{ ...inputBase, width: 150, paddingLeft: "2.1rem" }} />
+                </div>
+                {/* Filter dropdown */}
+                <div style={{ width: 140 }}>
+                  <CategoryDropdown
+                    value={selectedCategory} onChange={v => setSelectedCategory(v as ExpenseCategory | "All")}
+                    open={filterDropdownOpen} setOpen={setFilterDropdownOpen} dropRef={filterDropdownRef}
+                    filterMode
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Category filter chips */}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.4rem" }}>
+              {(["All", ...categories] as (ExpenseCategory | "All")[]).map(c => {
+                const CIcon = c !== "All" ? CATEGORY_ICON_COMPONENTS[c as ExpenseCategory] : null;
+                const cColor = c !== "All" ? CATEGORY_COLORS[c as ExpenseCategory] : txMute;
                 return (
-                  <div key={name} className="space-y-1">
-                    <div className="flex items-center justify-between text-sm">
-                      <div className="flex items-center gap-2">
-                        <span className={`h-2 w-2 rounded-full ${color}`} />
-                        <span className="font-medium">{name}</span>
+                  <button key={c} type="button" className={`cat-chip${selectedCategory === c ? " active" : ""}`}
+                    onClick={() => setSelectedCategory(c)}
+                    style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem", padding: "0.28rem 0.65rem", borderRadius: 999, fontSize: "0.7rem", fontWeight: 600, background: "transparent", border: isDark ? "1px solid rgba(255,255,255,0.08)" : "1px solid rgba(0,0,0,0.1)", color: txMute, fontFamily: "inherit" }}>
+                    {CIcon ? <CIcon size={11} color={selectedCategory === c ? "#14b8a6" : cColor} /> : null}
+                    {c}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="scroll-list" style={{ display: "flex", flexDirection: "column", gap: "0.4rem", maxHeight: 440, overflowY: "auto", paddingRight: "0.25rem" }}>
+              {filteredExpenses.map(item => {
+                const CatIcon = CATEGORY_ICON_COMPONENTS[item.category];
+                return (
+                  <div key={item.id} className="expense-row" style={{ border: isDark ? "1px solid rgba(255,255,255,0.05)" : "1px solid rgba(0,0,0,0.07)", overflow: "hidden" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.8rem 1rem" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", minWidth: 0 }}>
+                        <div style={{ width: 36, height: 36, borderRadius: 10, background: `${CATEGORY_COLORS[item.category]}18`, border: `1px solid ${CATEGORY_COLORS[item.category]}30`, display: "grid", placeItems: "center", flexShrink: 0 }}>
+                          <CatIcon size={16} color={CATEGORY_COLORS[item.category]} />
+                        </div>
+                        <div style={{ minWidth: 0 }}>
+                          <p style={{ fontWeight: 600, fontSize: "0.875rem", color: tx, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.title}</p>
+                          <div style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap", marginTop: "0.15rem", alignItems: "center" }}>
+                            <span style={{ fontSize: "0.7rem", color: txMute }}>{item.category}</span>
+                            {item.merchant_name && <span style={{ fontSize: "0.7rem", color: txMute }}>· {item.merchant_name}</span>}
+                            {item.created_at && <span style={{ fontSize: "0.7rem", color: txMute }}>· {new Date(item.created_at).toLocaleDateString("en-PH", { month: "short", day: "numeric" })}</span>}
+                            {item.auto_categorized && <span style={{ padding: "0.05rem 0.4rem", borderRadius: 999, fontSize: "0.58rem", fontWeight: 700, background: "rgba(20,184,166,0.1)", color: "#14b8a6", border: "1px solid rgba(20,184,166,0.2)" }}>AI</span>}
+                          </div>
+                        </div>
                       </div>
-                      <span className={subtleText}>{pesoFormatter.format(value)} · {width.toFixed(0)}%</span>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexShrink: 0, marginLeft: "0.5rem" }}>
+                        <span style={{ fontWeight: 700, fontSize: "0.9rem", color: tx }}>{pesoFormatter.format(item.amount)}</span>
+                        {(item.notes || item.receipt_image_url) && (
+                          <button type="button" onClick={() => setExpandedId(expandedId === item.id ? null : item.id)}
+                            style={{ padding: "0.2rem 0.45rem", borderRadius: 6, background: "transparent", border: isDark ? "1px solid rgba(255,255,255,0.08)" : "1px solid rgba(0,0,0,0.1)", cursor: "pointer", fontSize: "0.62rem", color: txMute }}>
+                            {expandedId === item.id ? "▲" : "▼"}
+                          </button>
+                        )}
+                        <button type="button" className="del-btn" onClick={() => handleDeleteExpense(item.id)}
+                          style={{ padding: "0.25rem 0.6rem", borderRadius: 7, background: "transparent", border: "1px solid rgba(239,68,68,0.18)", color: "#f87171", fontSize: "0.7rem", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+                          Delete
+                        </button>
+                      </div>
                     </div>
-                    <div className={`h-2 w-full overflow-hidden rounded-full ${isDark ? "bg-slate-800" : "bg-slate-200"}`}>
-                      <div className={`h-full rounded-full transition-all duration-700 ${color}`} style={{ width: `${width}%` }} />
+                    {expandedId === item.id && (
+                      <div style={{ padding: "0.75rem 1rem", borderTop: isDark ? "1px solid rgba(255,255,255,0.04)" : "1px solid rgba(0,0,0,0.05)", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                        {item.notes && <p style={{ fontSize: "0.8rem", color: txSub }}>{item.notes}</p>}
+                        {item.receipt_image_url && (
+                          <a href={item.receipt_image_url} target="_blank" rel="noopener noreferrer">
+                            <img src={item.receipt_image_url} alt="Receipt" style={{ maxHeight: 120, borderRadius: 8, objectFit: "contain", border: isDark ? "1px solid rgba(255,255,255,0.07)" : "1px solid rgba(0,0,0,0.08)" }} />
+                          </a>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              {filteredExpenses.length === 0 && (
+                <div style={{ padding: "2.5rem 1rem", textAlign: "center", borderRadius: 14, border: isDark ? "1.5px dashed rgba(255,255,255,0.06)" : "1.5px dashed rgba(0,0,0,0.08)", color: txMute, fontSize: "0.85rem" }}>
+                  <div style={{ display: "flex", justifyContent: "center", marginBottom: "0.5rem" }}><IconSearch size={22} color={txMute} /></div>
+                  No expense records match your filters.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* ── Budget Health + Category Breakdown ── */}
+        <div className="dash-cols-main" style={{ display: "grid", gridTemplateColumns: "2fr 3fr", gap: "1.2rem" }}>
+          <div style={{ ...glass, borderRadius: 22, padding: "1.6rem" }}>
+            <h2 style={{ fontSize: "1.05rem", fontWeight: 700, color: tx, margin: "0 0 0.2rem" }}>Budget Health</h2>
+            <p style={{ fontSize: "0.78rem", color: txMute, marginBottom: "1.2rem" }}>Remaining budget this month</p>
+            <p style={{ fontSize: "2.2rem", fontWeight: 800, letterSpacing: "-0.03em", color: budgetUsage >= 80 ? "#f87171" : "#14b8a6", marginBottom: "0.8rem" }}>{pesoFormatter.format(budgetLeft)}</p>
+            <div style={{ position: "relative", height: 8, borderRadius: 999, background: isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.07)", overflow: "hidden", marginBottom: "0.5rem" }}>
+              <div style={{ position: "absolute", inset: 0, width: `${budgetUsage}%`, background: budgetGrad, borderRadius: 999, transition: "width 0.8s cubic-bezier(0.22,1,0.36,1)" }} />
+            </div>
+            <p style={{ fontSize: "0.75rem", color: txMute, marginBottom: "1.2rem" }}>{budgetUsage.toFixed(0)}% used · {pesoFormatter.format(budgetValue)} budget</p>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", padding: "1rem", borderRadius: 14, background: isDark ? "rgba(255,255,255,0.025)" : "rgba(0,0,0,0.025)", border: isDark ? "1px solid rgba(255,255,255,0.05)" : "1px solid rgba(0,0,0,0.06)" }}>
+              {[{ label: "Days left", val: `${daysLeft}d` }, { label: "Daily cap", val: pesoFormatter.format(dailyCap) }].map(({ label, val }) => (
+                <div key={label}>
+                  <p style={{ fontSize: "0.68rem", color: txMute }}>{label}</p>
+                  <p style={{ fontSize: "1.15rem", fontWeight: 700, color: "#14b8a6", marginTop: "0.15rem" }}>{val}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ ...glass, borderRadius: 22, padding: "1.6rem" }}>
+            <h2 style={{ fontSize: "1.05rem", fontWeight: 700, color: tx, margin: "0 0 1.2rem" }}>Category Breakdown</h2>
+            <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+              {Object.entries(totals.byCategory).sort((a, b) => b[1] - a[1]).filter(([, v]) => v > 0 || totals.total === 0).map(([name, value]) => {
+                const pct = totals.total > 0 ? (value / totals.total) * 100 : 0;
+                const color = CATEGORY_COLORS[name as ExpenseCategory] ?? "#64748b";
+                const CIcon = CATEGORY_ICON_COMPONENTS[name as ExpenseCategory] ?? IconOther;
+                return (
+                  <div key={name}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.4rem" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                        <div style={{ width: 26, height: 26, borderRadius: 7, background: `${color}18`, display: "grid", placeItems: "center" }}>
+                          <CIcon size={13} color={color} />
+                        </div>
+                        <span style={{ fontSize: "0.85rem", fontWeight: 600, color: tx }}>{name}</span>
+                      </div>
+                      <span style={{ fontSize: "0.78rem", color: txSub }}>{pesoFormatter.format(value)} · <span style={{ color }}>{pct.toFixed(0)}%</span></span>
+                    </div>
+                    <div style={{ height: 6, borderRadius: 999, background: isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.06)", overflow: "hidden" }}>
+                      <div style={{ height: "100%", borderRadius: 999, background: color, width: `${pct}%`, transition: "width 0.8s cubic-bezier(0.22,1,0.36,1)", opacity: 0.9 }} />
                     </div>
                   </div>
                 );
               })}
+            </div>
           </div>
-        </article>
-      </section>
-
-      <style>{`
-        @keyframes scan {
-          0% { top: 10%; }
-          50% { top: 85%; }
-          100% { top: 10%; }
-        }
-      `}</style>
-    </div>
+        </div>
+      </div>
+    </>
   );
 }
