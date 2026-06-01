@@ -1,7 +1,7 @@
 "use client";
 
 import type { FormEvent } from "react";
-import { useMemo, useState, useEffect, useRef } from "react";
+import { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { usePrototypeTheme } from "./prototype-shell";
 
@@ -9,12 +9,21 @@ type ExpenseCategory = "Food" | "Transport" | "Utilities" | "Shopping" | "Health
 type Expense = {
   id: string; title: string; category: ExpenseCategory; amount: number;
   merchant_name: string | null; notes: string | null; auto_categorized: boolean;
+  // NEW: track which engine categorized the expense
+  categorization_source?: "ml" | "rf" | "ai" | null;
   receipt_image_url: string | null; raw_ocr_text: string | null; created_at?: string;
 };
 type OCRResult = {
   merchant: string | null; date: string | null; amount: number | null;
   category: ExpenseCategory | null; items: string[]; raw_text: string | null; confidence: number;
 };
+
+// NEW: categorization state shown in the form
+type CategorizationState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "done"; category: ExpenseCategory; confidence: number; source: "ml" | "rf" | "ai" }
+  | { status: "error" };
 
 const categories: ExpenseCategory[] = ["Food", "Transport", "Utilities", "Shopping", "Health", "Other"];
 const pesoFormatter = new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" });
@@ -167,11 +176,79 @@ function IconWarning({ size = 16, color = "currentColor" }: { size?: number; col
     </svg>
   );
 }
+// NEW: Brain icon for ML badge
+function IconBrain({ size = 12, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.44-4.24Z" />
+      <path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.44-4.24Z" />
+    </svg>
+  );
+}
+// NEW: Sparkle for AI badge
+function IconSparkle({ size = 12, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5Z" />
+      <path d="M5 3v4" /><path d="M19 17v4" /><path d="M3 5h4" /><path d="M17 19h4" />
+    </svg>
+  );
+}
 
 const CATEGORY_ICON_COMPONENTS: Record<ExpenseCategory, React.FC<{ size?: number; color?: string }>> = {
   Food: IconFood, Transport: IconTransport, Utilities: IconUtilities,
   Shopping: IconShopping, Health: IconHealth, Other: IconOther,
 };
+
+// ── NEW: Source badge components ─────────────────────────────
+function SourceBadge({ source }: { source: "ml" | "rf" | "ai" }) {
+  const isML = source === "ml";
+  const isRF = source === "rf";
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center", gap: "0.25rem",
+      padding: "0.05rem 0.42rem", borderRadius: 999,
+      fontSize: "0.58rem", fontWeight: 700, letterSpacing: "0.05em",
+      background: isML ? "rgba(99,102,241,0.12)" : isRF ? "rgba(99,102,241,0.12)" : "rgba(20,184,166,0.10)",
+      color: isML ? "#818cf8" : isRF ? "#6366f1" : "#14b8a6",
+      border: `1px solid ${isML ? "rgba(99,102,241,0.25)" : isRF ? "rgba(99,102,241,0.25)" : "rgba(20,184,166,0.2)"}`,
+      flexShrink: 0,
+    }}>
+      {isML ? <IconBrain size={9} color="#818cf8" /> : isRF ? <IconBrain size={9} color="#6366f1" /> : <IconSparkle size={9} color="#14b8a6" />}
+      {isML ? "ML" : isRF ? "RF" : "AI"}
+    </span>
+  );
+}
+
+// ── NEW: Confidence bar pill ─────────────────────────────────
+function ConfidencePill({
+  confidence, source, isDark,
+}: { confidence: number; source: "ml" | "rf" | "ai"; isDark: boolean }) {
+  const pct = Math.round(confidence * 100);
+  const isHigh = pct >= 80;
+  const isMid  = pct >= 55;
+  const color  = isHigh ? "#22c55e" : isMid ? "#14b8a6" : "#fb923c";
+  const label = source === "ml" ? "ML confidence" : source === "rf" ? "RF confidence" : "AI confidence";
+
+  return (
+    <div style={{
+      display: "flex", alignItems: "center", gap: "0.5rem",
+      padding: "0.45rem 0.7rem", borderRadius: 9,
+      background: isDark ? "rgba(255,255,255,0.035)" : "rgba(0,0,0,0.03)",
+      border: isDark ? "1px solid rgba(255,255,255,0.07)" : "1px solid rgba(0,0,0,0.08)",
+    }}>
+      <SourceBadge source={source} />
+      <div style={{ flex: 1, height: 4, borderRadius: 999, background: isDark ? "rgba(255,255,255,0.07)" : "rgba(0,0,0,0.08)", overflow: "hidden" }}>
+        <div style={{
+          height: "100%", width: `${pct}%`, borderRadius: 999,
+          background: color, transition: "width 0.5s cubic-bezier(0.22,1,0.36,1)",
+        }} />
+      </div>
+      <span style={{ fontSize: "0.7rem", fontWeight: 700, color, minWidth: 30, textAlign: "right" }}>{pct}%</span>
+      <span style={{ fontSize: "0.65rem", color: isDark ? "#475569" : "#94a3b8" }}>{label}</span>
+    </div>
+  );
+}
 
 export default function PrototypePage() {
   const { isDark } = usePrototypeTheme();
@@ -190,6 +267,13 @@ export default function PrototypePage() {
   const [filterDropdownOpen, setFilterDropdownOpen] = useState(false);
   const categoryDropdownRef = useRef<HTMLDivElement>(null);
   const filterDropdownRef = useRef<HTMLDivElement>(null);
+
+  // NEW: ML/AI categorization state
+  const [catState, setCatState] = useState<CategorizationState>({ status: "idle" });
+  const [categorizationSource, setCategorizationSource] = useState<"ml" | "rf"| "ai" | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Track whether user manually changed the category (suppress auto-fill)
+  const userOverrideRef = useRef(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -230,6 +314,59 @@ export default function PrototypePage() {
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
+
+  // ── NEW: Auto-categorize when title or merchant changes ──────
+  const triggerCategorization = useCallback((newTitle: string, newMerchant: string) => {
+    if (userOverrideRef.current) return;   // user manually picked — don't overwrite
+    if (!newTitle.trim() && !newMerchant.trim()) {
+      setCatState({ status: "idle" });
+      return;
+    }
+
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+
+    debounceRef.current = setTimeout(async () => {
+      setCatState({ status: "loading" });
+      try {
+        const res = await fetch("/api/categorize", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: newTitle, merchantName: newMerchant }),
+        });
+        if (!res.ok) throw new Error("categorize failed");
+        const data = await res.json();
+
+        if (!userOverrideRef.current) {
+          setCategory(data.category as ExpenseCategory);
+          setIsAutoCategorized(true);
+          setCategorizationSource(data.source);
+          setCatState({ status: "done", category: data.category, confidence: data.confidence, source: data.source });
+        }
+      } catch {
+        setCatState({ status: "error" });
+      }
+    }, 600);   // 600ms debounce
+  }, []);
+
+  function handleTitleChange(v: string) {
+    setTitle(v);
+    userOverrideRef.current = false;
+    triggerCategorization(v, merchantName);
+  }
+
+  function handleMerchantChange(v: string) {
+    setMerchantName(v);
+    userOverrideRef.current = false;
+    triggerCategorization(title, v);
+  }
+
+  function handleManualCategoryChange(v: string) {
+    setCategory(v as ExpenseCategory);
+    userOverrideRef.current = true;   // user took control
+    setIsAutoCategorized(false);
+    setCatState({ status: "idle" });
+    setCategorizationSource(null);
+  }
 
   function stopStream() { streamRef.current?.getTracks().forEach(t => t.stop()); streamRef.current = null; }
 
@@ -289,16 +426,95 @@ export default function PrototypePage() {
   }
 
   async function applyOCRToForm() {
-    if (!ocrResult) return;
-    let receiptUrl: string | null = null;
-    if (capturedBlob) receiptUrl = await uploadReceiptImage(capturedBlob, capturedMime);
-    if (ocrResult.merchant) { setTitle(ocrResult.merchant); setMerchantName(ocrResult.merchant); }
-    if (ocrResult.amount) setAmount(String(ocrResult.amount));
-    if (ocrResult.category) setCategory(ocrResult.category);
-    if (ocrResult.items?.length) setNotes(ocrResult.items.join(", "));
-    setIsAutoCategorized(true); setPendingReceiptUrl(receiptUrl); setPendingRawOcr(ocrResult.raw_text ?? null);
-    formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  if (!ocrResult) return;
+ 
+  // ── 1. Upload receipt image (unchanged) ────────────────────────────────────
+  let receiptUrl: string | null = null;
+  if (capturedBlob) receiptUrl = await uploadReceiptImage(capturedBlob, capturedMime);
+ 
+  // ── 2. Fill non-category fields from Gemini extraction ────────────────────
+  const extractedTitle    = ocrResult.merchant ?? "";
+  const extractedMerchant = ocrResult.merchant ?? "";
+ 
+  if (extractedTitle)          setTitle(extractedTitle);
+  if (extractedMerchant)       setMerchantName(extractedMerchant);
+  if (ocrResult.amount)        setAmount(String(ocrResult.amount));
+  if (ocrResult.items?.length) setNotes(ocrResult.items.join(", "));
+ 
+  setPendingReceiptUrl(receiptUrl);
+  setPendingRawOcr(ocrResult.raw_text ?? null);
+ 
+  // ── 3. Reset override so ML pipeline can write the category ───────────────
+  userOverrideRef.current = false;
+ 
+  // ── 4. Run /api/categorize (TS → RF → Claude) ─────────────────────────────
+  //    Gemini's category guess is intentionally NOT used here.
+  //    RF is purpose-built for PH expenses and improves with corrections.
+  if (extractedTitle || extractedMerchant) {
+    setCatState({ status: "loading" });
+    setIsAutoCategorized(false);
+ 
+    try {
+      const res = await fetch("/api/categorize", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({
+          title:        extractedTitle,
+          merchantName: extractedMerchant,
+        }),
+      });
+ 
+      if (!res.ok) throw new Error("categorize failed");
+ 
+      const data = await res.json();
+ 
+      // Only apply if user hasn't manually overridden while we were loading
+      if (!userOverrideRef.current) {
+        setCategory(data.category as ExpenseCategory);
+        setIsAutoCategorized(true);
+        setCategorizationSource(data.source);   // "ml" | "rf" | "ai"
+        setCatState({
+          status:     "done",
+          category:   data.category,
+          confidence: data.confidence,
+          source:     data.source,
+        });
+      }
+    } catch {
+      // Safety net: /api/categorize failed entirely — fall back to Gemini's guess
+      if (ocrResult.category) {
+        setCategory(ocrResult.category);
+        setIsAutoCategorized(true);
+        setCategorizationSource("ai");
+        setCatState({
+          status:     "done",
+          category:   ocrResult.category,
+          confidence: ocrResult.confidence / 100,
+          source:     "ai",
+        });
+      } else {
+        setCatState({ status: "error" });
+      }
+    }
+ 
+  } else {
+    // No text extracted from receipt — fall back to Gemini's category
+    if (ocrResult.category) {
+      setCategory(ocrResult.category);
+      setIsAutoCategorized(true);
+      setCategorizationSource("ai");
+      setCatState({
+        status:     "done",
+        category:   ocrResult.category,
+        confidence: ocrResult.confidence / 100,
+        source:     "ai",
+      });
+    }
   }
+ 
+  // ── 5. Scroll form into view (unchanged) ──────────────────────────────────
+  formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
 
   function resetScanner() {
     stopStream(); setScannerMode("idle");
@@ -313,11 +529,20 @@ export default function PrototypePage() {
     if (!title.trim() || Number.isNaN(parsedAmount) || parsedAmount <= 0) return;
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
-    const { data, error } = await supabase.from("expenses").insert({ user_id: user.id, title: title.trim(), category, amount: parsedAmount, merchant_name: merchantName.trim() || null, notes: notes.trim() || null, auto_categorized: isAutoCategorized, receipt_image_url: pendingReceiptUrl, raw_ocr_text: pendingRawOcr }).select().single();
+    const { data, error } = await supabase.from("expenses").insert({
+      user_id: user.id, title: title.trim(), category,
+      amount: parsedAmount, merchant_name: merchantName.trim() || null,
+      notes: notes.trim() || null, auto_categorized: isAutoCategorized,
+      // Store which engine categorized it
+      categorization_source: categorizationSource,
+      receipt_image_url: pendingReceiptUrl, raw_ocr_text: pendingRawOcr,
+    }).select().single();
     if (!error && data) {
       setExpenses(prev => [data, ...prev]);
       setTitle(""); setAmount(""); setCategory("Food"); setMerchantName(""); setNotes("");
-      setIsAutoCategorized(false); setPendingReceiptUrl(null); setPendingRawOcr(null);
+      setIsAutoCategorized(false); setCategorizationSource(null);
+      setCatState({ status: "idle" }); userOverrideRef.current = false;
+      setPendingReceiptUrl(null); setPendingRawOcr(null);
       resetScanner();
     }
   }
@@ -382,7 +607,7 @@ export default function PrototypePage() {
     color: tx, outline: "none", fontFamily: "inherit", transition: "border-color 0.2s, box-shadow 0.2s",
   };
 
-  // Custom dropdown renderer
+  // Custom dropdown renderer (unchanged from original)
   const CategoryDropdown = ({
     value, onChange, open, setOpen, dropRef, filterMode = false,
   }: {
@@ -485,6 +710,8 @@ export default function PrototypePage() {
         @keyframes scan { 0%{top:8%} 50%{top:88%} 100%{top:8%} }
         @keyframes fadeSlideUp { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
         @keyframes pulse-dot { 0%,100%{box-shadow:0 0 0 0 rgba(20,184,166,0.4)} 50%{box-shadow:0 0 0 6px rgba(20,184,166,0)} }
+        @keyframes shimmer { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
+        @keyframes popIn { from{opacity:0;transform:scale(0.85)} to{opacity:1;transform:scale(1)} }
 
         .dash-card { animation: fadeSlideUp 0.45s cubic-bezier(0.22,1,0.36,1) both; }
         .dash-card:nth-child(1){animation-delay:0.05s} .dash-card:nth-child(2){animation-delay:0.1s}
@@ -508,6 +735,21 @@ export default function PrototypePage() {
 
         .scroll-list::-webkit-scrollbar { width: 4px; }
         .scroll-list::-webkit-scrollbar-thumb { background: rgba(100,116,139,0.2); border-radius: 999px; }
+
+        /* NEW: categorization loading shimmer */
+        .cat-shimmer {
+          background: linear-gradient(90deg,
+            ${isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.04)"} 25%,
+            ${isDark ? "rgba(20,184,166,0.12)" : "rgba(20,184,166,0.08)"} 50%,
+            ${isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.04)"} 75%
+          );
+          background-size: 200% 100%;
+          animation: shimmer 1.4s ease-in-out infinite;
+          border-radius: 9px;
+          height: 36px;
+        }
+        .confidence-pop { animation: popIn 0.25s cubic-bezier(0.22,1,0.36,1); }
+        .cat-highlight { box-shadow: 0 0 0 2px rgba(20,184,166,0.35); transition: box-shadow 0.3s; }
 
         @media (max-width: 900px) {
           .dash-cols-4 { grid-template-columns: 1fr 1fr !important; }
@@ -539,7 +781,7 @@ export default function PrototypePage() {
           ))}
         </div>
 
-        {/* ── OCR Scanner ── */}
+        {/* ── OCR Scanner (unchanged) ── */}
         <div style={{ ...glass, borderRadius: 22, padding: "1.6rem", position: "relative", overflow: "hidden" }}>
           <div style={{ position: "absolute", inset: 0, backgroundImage: "radial-gradient(rgba(20,184,166,0.05) 1px, transparent 1px)", backgroundSize: "28px 28px", pointerEvents: "none", borderRadius: 22 }} />
           <div style={{ position: "relative", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "1rem", marginBottom: "1.4rem" }}>
@@ -558,7 +800,6 @@ export default function PrototypePage() {
           <input ref={galleryInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={e => { handleGalleryPick(e.target.files?.[0]); e.target.value = ""; }} />
 
           <div className="dash-cols-main" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.2rem" }}>
-            {/* Preview */}
             <div style={{ position: "relative", minHeight: 260, borderRadius: 16, border: `1.5px dashed ${isDark ? "rgba(20,184,166,0.2)" : "rgba(20,184,166,0.25)"}`, background: isDark ? "rgba(0,0,0,0.25)" : "rgba(20,184,166,0.02)", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
               {scannerMode === "idle" && (
                 <div style={{ textAlign: "center", padding: "2rem" }}>
@@ -593,7 +834,6 @@ export default function PrototypePage() {
               )}
             </div>
 
-            {/* Controls + extracted data */}
             <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
               <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
                 {scannerMode === "idle" && (<>
@@ -621,13 +861,11 @@ export default function PrototypePage() {
                   <button type="button" disabled style={{ padding: "0.6rem 1.1rem", borderRadius: 10, background: "rgba(20,184,166,0.2)", border: "none", color: "#14b8a6", fontSize: "0.82rem", fontWeight: 700, cursor: "not-allowed", fontFamily: "inherit" }}>Analyzing…</button>
                 )}
               </div>
-
               {ocrError && (
                 <div style={{ padding: "0.75rem 1rem", borderRadius: 10, background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", fontSize: "0.8rem", color: "#f87171", display: "flex", gap: "0.5rem", alignItems: "flex-start" }}>
                   <IconWarning size={15} color="#f87171" /><span>{ocrError}</span>
                 </div>
               )}
-
               <div style={{ flex: 1, borderRadius: 14, background: isDark ? "rgba(255,255,255,0.025)" : "rgba(0,0,0,0.02)", border: isDark ? "1px solid rgba(255,255,255,0.06)" : "1px solid rgba(0,0,0,0.07)", padding: "1rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                   <p style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "#14b8a6" }}>Extracted Data</p>
@@ -658,49 +896,108 @@ export default function PrototypePage() {
         {/* ── Add Expense + Records ── */}
         <div className="dash-cols-main" ref={formRef} style={{ display: "grid", gridTemplateColumns: "2fr 3fr", gap: "1.2rem" }}>
 
-          {/* Add Expense Form */}
+          {/* ── Add Expense Form ── */}
           <form onSubmit={handleAddExpense} style={{ ...glass, borderRadius: 22, padding: "1.6rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.25rem" }}>
               <div>
                 <h2 style={{ fontSize: "1.05rem", fontWeight: 700, color: tx, margin: 0 }}>Add Expense</h2>
                 <p style={{ fontSize: "0.72rem", color: txMute, marginTop: "0.15rem" }}>Record a new transaction</p>
               </div>
-              {isAutoCategorized && (
+              {/* Show badge: OCR-filled takes precedence, then ML/AI */}
+              {isAutoCategorized && catState.status !== "loading" && (
                 <span style={{ display: "inline-flex", alignItems: "center", gap: "0.3rem", padding: "0.25rem 0.65rem", borderRadius: 999, fontSize: "0.65rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", background: "rgba(20,184,166,0.12)", border: "1px solid rgba(20,184,166,0.3)", color: "#14b8a6" }}>
-                  <IconScan size={11} color="#14b8a6" /> AI Filled
+                  {categorizationSource === "ml"
+                    ? <><IconBrain size={11} color="#818cf8" /><span style={{ color: "#818cf8" }}>ML Filled</span></>
+                    : categorizationSource === "rf"
+                    ? <><IconBrain size={11} color="#6366f1" /><span style={{ color: "#6366f1" }}>RF Filled</span></>
+                    : <><IconSparkle size={11} color="#14b8a6" />AI Filled</>
+                  }
+                </span>
+              )}
+              {catState.status === "loading" && (
+                <span style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem", padding: "0.25rem 0.65rem", borderRadius: 999, fontSize: "0.65rem", fontWeight: 700, background: isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)", border: isDark ? "1px solid rgba(255,255,255,0.1)" : "1px solid rgba(0,0,0,0.08)", color: txMute }}>
+                  <div style={{ width: 8, height: 8, borderRadius: "50%", border: "1.5px solid rgba(20,184,166,0.3)", borderTopColor: "#14b8a6", animation: "spin 0.7s linear infinite" }} />
+                  Analyzing…
                 </span>
               )}
             </div>
 
-            {[
-              { label: "Title *", field: title, set: setTitle, placeholder: "e.g. Dinner at Jollibee", type: "text" },
-              { label: "Merchant Name", field: merchantName, set: setMerchantName, placeholder: "e.g. Jollibee SM Davao", type: "text" },
-            ].map(({ label, field, set, placeholder, type }) => (
-              <div key={label}>
-                <label style={{ display: "block", fontSize: "0.72rem", fontWeight: 600, color: txMute, marginBottom: "0.35rem", letterSpacing: "0.04em" }}>{label}</label>
-                <input className="dash-input" type={type} value={field} onChange={e => set(e.target.value)} placeholder={placeholder} style={inputBase} />
-              </div>
-            ))}
-
-            {/* Custom category dropdown */}
+            {/* Title */}
             <div>
-              <label style={{ display: "block", fontSize: "0.72rem", fontWeight: 600, color: txMute, marginBottom: "0.35rem", letterSpacing: "0.04em" }}>Category</label>
-              <CategoryDropdown
-                value={category} onChange={v => { setCategory(v as ExpenseCategory); setIsAutoCategorized(false); }}
-                open={categoryDropdownOpen} setOpen={setCategoryDropdownOpen} dropRef={categoryDropdownRef}
+              <label style={{ display: "block", fontSize: "0.72rem", fontWeight: 600, color: txMute, marginBottom: "0.35rem", letterSpacing: "0.04em" }}>Title *</label>
+              <input
+                className="dash-input"
+                type="text"
+                value={title}
+                onChange={e => handleTitleChange(e.target.value)}
+                placeholder="e.g. Dinner at Jollibee"
+                style={inputBase}
               />
             </div>
 
+            {/* Merchant Name */}
+            <div>
+              <label style={{ display: "block", fontSize: "0.72rem", fontWeight: 600, color: txMute, marginBottom: "0.35rem", letterSpacing: "0.04em" }}>Merchant Name</label>
+              <input
+                className="dash-input"
+                type="text"
+                value={merchantName}
+                onChange={e => handleMerchantChange(e.target.value)}
+                placeholder="e.g. Jollibee SM Davao"
+                style={inputBase}
+              />
+            </div>
+
+            {/* Category dropdown */}
+            <div>
+              <label style={{ display: "block", fontSize: "0.72rem", fontWeight: 600, color: txMute, marginBottom: "0.35rem", letterSpacing: "0.04em" }}>
+                Category
+                {catState.status === "loading" && (
+                  <span style={{ marginLeft: "0.5rem", fontSize: "0.65rem", color: "#14b8a6", fontWeight: 500 }}>detecting…</span>
+                )}
+              </label>
+
+              {/* Shimmer placeholder while loading */}
+              {catState.status === "loading"
+                ? <div className="cat-shimmer" />
+                : (
+                  <div className={catState.status === "done" ? "cat-highlight" : ""} style={{ borderRadius: 10 }}>
+                    <CategoryDropdown
+                      value={category}
+                      onChange={handleManualCategoryChange}
+                      open={categoryDropdownOpen}
+                      setOpen={setCategoryDropdownOpen}
+                      dropRef={categoryDropdownRef}
+                    />
+                  </div>
+                )
+              }
+
+              {/* Confidence bar — shown after detection */}
+              {catState.status === "done" && !userOverrideRef.current && (
+                <div className="confidence-pop" style={{ marginTop: "0.45rem" }}>
+                  <ConfidencePill
+                    confidence={catState.confidence}
+                    source={catState.source}
+                    isDark={isDark}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Amount */}
             <div>
               <label style={{ display: "block", fontSize: "0.72rem", fontWeight: 600, color: txMute, marginBottom: "0.35rem", letterSpacing: "0.04em" }}>Amount (PHP) *</label>
               <input className="dash-input" type="number" min="0.01" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00" style={inputBase} />
             </div>
 
+            {/* Notes */}
             <div>
               <label style={{ display: "block", fontSize: "0.72rem", fontWeight: 600, color: txMute, marginBottom: "0.35rem", letterSpacing: "0.04em" }}>Notes</label>
               <textarea className="dash-input" rows={2} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional notes…" style={{ ...inputBase, resize: "none" }} />
             </div>
 
+            {/* Budget */}
             <div>
               <label style={{ display: "block", fontSize: "0.72rem", fontWeight: 600, color: txMute, marginBottom: "0.35rem", letterSpacing: "0.04em" }}>Monthly Budget (PHP)</label>
               <input className="dash-input" type="number" min="0" step="1" value={monthlyBudget} onChange={e => handleBudgetChange(e.target.value)} placeholder="10000" style={inputBase} />
@@ -717,7 +1014,7 @@ export default function PrototypePage() {
             </button>
           </form>
 
-          {/* Records */}
+          {/* ── Expense Records ── */}
           <div style={{ ...glass, borderRadius: 22, padding: "1.6rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
             <div style={{ display: "flex", flexWrap: "wrap", alignItems: "flex-start", justifyContent: "space-between", gap: "0.75rem" }}>
               <div>
@@ -727,14 +1024,12 @@ export default function PrototypePage() {
                 </p>
               </div>
               <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-                {/* Search */}
                 <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
                   <span style={{ position: "absolute", left: "0.7rem", pointerEvents: "none" }}>
                     <IconSearch size={14} color={txMute} />
                   </span>
                   <input className="dash-input" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Search…" style={{ ...inputBase, width: 150, paddingLeft: "2.1rem" }} />
                 </div>
-                {/* Filter dropdown */}
                 <div style={{ width: 140 }}>
                   <CategoryDropdown
                     value={selectedCategory} onChange={v => setSelectedCategory(v as ExpenseCategory | "All")}
@@ -745,7 +1040,7 @@ export default function PrototypePage() {
               </div>
             </div>
 
-            {/* Category filter chips */}
+            {/* Category chips */}
             <div style={{ display: "flex", flexWrap: "wrap", gap: "0.4rem" }}>
               {(["All", ...categories] as (ExpenseCategory | "All")[]).map(c => {
                 const CIcon = c !== "All" ? CATEGORY_ICON_COMPONENTS[c as ExpenseCategory] : null;
@@ -761,9 +1056,13 @@ export default function PrototypePage() {
               })}
             </div>
 
+            {/* Records list */}
             <div className="scroll-list" style={{ display: "flex", flexDirection: "column", gap: "0.4rem", maxHeight: 440, overflowY: "auto", paddingRight: "0.25rem" }}>
               {filteredExpenses.map(item => {
                 const CatIcon = CATEGORY_ICON_COMPONENTS[item.category];
+                // Determine which source badge to show
+                const itemSource = item.categorization_source ?? (item.auto_categorized ? "ai" : null);
+
                 return (
                   <div key={item.id} className="expense-row" style={{ border: isDark ? "1px solid rgba(255,255,255,0.05)" : "1px solid rgba(0,0,0,0.07)", overflow: "hidden" }}>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.8rem 1rem" }}>
@@ -777,7 +1076,8 @@ export default function PrototypePage() {
                             <span style={{ fontSize: "0.7rem", color: txMute }}>{item.category}</span>
                             {item.merchant_name && <span style={{ fontSize: "0.7rem", color: txMute }}>· {item.merchant_name}</span>}
                             {item.created_at && <span style={{ fontSize: "0.7rem", color: txMute }}>· {new Date(item.created_at).toLocaleDateString("en-PH", { month: "short", day: "numeric" })}</span>}
-                            {item.auto_categorized && <span style={{ padding: "0.05rem 0.4rem", borderRadius: 999, fontSize: "0.58rem", fontWeight: 700, background: "rgba(20,184,166,0.1)", color: "#14b8a6", border: "1px solid rgba(20,184,166,0.2)" }}>AI</span>}
+                            {/* NEW: Source badge — ML (indigo) or AI (teal) */}
+                            {itemSource && <SourceBadge source={itemSource} />}
                           </div>
                         </div>
                       </div>
@@ -818,7 +1118,7 @@ export default function PrototypePage() {
           </div>
         </div>
 
-        {/* ── Budget Health + Category Breakdown ── */}
+        {/* ── Budget Health + Category Breakdown (unchanged) ── */}
         <div className="dash-cols-main" style={{ display: "grid", gridTemplateColumns: "2fr 3fr", gap: "1.2rem" }}>
           <div style={{ ...glass, borderRadius: 22, padding: "1.6rem" }}>
             <h2 style={{ fontSize: "1.05rem", fontWeight: 700, color: tx, margin: "0 0 0.2rem" }}>Budget Health</h2>
