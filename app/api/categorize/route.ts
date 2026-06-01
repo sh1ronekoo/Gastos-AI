@@ -2,28 +2,22 @@
  * app/api/categorize/route.ts
  *
  * POST { title: string, merchantName?: string }
- * → { category, confidence, source: "ml" | "rf" }
+ * → { category, confidence, source: "ml" }
  *
- * 2-tier fallback chain (fully free, no external API):
- *   1. TS keyword classifier  (< 1ms, free, no network)
- *      → confidence ≥ ML_THRESHOLD  → return immediately (source: "ml")
- *   2. FastAPI Random Forest  (Python/scikit-learn, localhost:8000)
- *      → confidence ≥ RF_THRESHOLD  → return (source: "rf")
- *      → RF service unreachable     → return ML result as-is
- *      → both below threshold       → return best available as Other
+ * Primary: Random Forest via FastAPI (real ML)
+ * Fallback: TS keyword classifier (if RF unreachable)
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { classify, ML_THRESHOLD, type ExpenseCategory } from "@/lib/ml-categorizer";
+import { classify, type ExpenseCategory } from "@/lib/ml-categorizer";
 
 const VALID_CATEGORIES: ExpenseCategory[] = [
   "Food", "Transport", "Utilities", "Shopping", "Health", "Other",
 ];
 
-const RF_SERVICE_URL = process.env.RF_SERVICE_URL  ?? "http://localhost:8000";
-const RF_API_KEY     = process.env.RF_API_KEY       ?? "";
-const RF_TIMEOUT_MS  = Number(process.env.RF_TIMEOUT_MS ?? "2000");
-const RF_THRESHOLD   = 0.52;
+const RF_SERVICE_URL = process.env.RF_SERVICE_URL ?? "http://localhost:8000";
+const RF_API_KEY     = process.env.RF_API_KEY ?? "";
+const RF_TIMEOUT_MS  = Number(process.env.RF_TIMEOUT_MS ?? "8000");
 
 export async function POST(req: NextRequest) {
   try {
@@ -38,37 +32,25 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // ── Tier 1: TS keyword classifier ───────────────────────────────────────
-    const mlResult = classify(title, merchantName);
-
-    if (mlResult.confidence >= ML_THRESHOLD) {
-      return NextResponse.json({
-        category:   mlResult.category,
-        confidence: mlResult.confidence,
-        source:     "ml" as const,
-        allScores:  mlResult.allScores,
-      });
-    }
-
-    // ── Tier 2: FastAPI Random Forest ────────────────────────────────────────
+    // ── Primary: Random Forest ───────────────────────────────────────────────
     const rfResult = await callRFService(title, merchantName);
 
-    if (rfResult && rfResult.confidence >= RF_THRESHOLD) {
+    if (rfResult) {
       return NextResponse.json({
         category:   rfResult.category,
         confidence: rfResult.confidence,
-        source:     "rf" as const,
+        source:     "ml" as const,
         allScores:  rfResult.allScores,
       });
     }
 
-    // ── No tier passed threshold — return best available ────────────────────
-    const fallback = rfResult ?? mlResult;
+    // ── Fallback: TS keyword classifier (RF unreachable) ────────────────────
+    const rulesResult = classify(title, merchantName);
     return NextResponse.json({
-      category:   fallback.category,
-      confidence: fallback.confidence,
-      source:     rfResult ? ("rf" as const) : ("ml" as const),
-      allScores:  fallback.allScores,
+      category:   rulesResult.category,
+      confidence: rulesResult.confidence,
+      source:     "ml" as const,
+      allScores:  rulesResult.allScores,
     });
 
   } catch (err) {
