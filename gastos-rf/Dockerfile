@@ -14,7 +14,7 @@ COPY train.py categorizer.py main.py ./
 RUN python train.py
 
 # Expose FastAPI port
-EXPOSE 8000
+EXPOSE 10000
 
 # Start with uvicorn (1 worker for small deploy; scale with --workers N)
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-10000} --workers 1"]
