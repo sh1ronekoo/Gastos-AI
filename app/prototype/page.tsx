@@ -159,6 +159,18 @@ function IconReceipt({ size = 18, color = "currentColor" }: { size?: number; col
     </svg>
   );
 }
+function IconESP32({ size = 18, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="6" width="20" height="12" rx="2" />
+      <line x1="6" y1="2" x2="6" y2="6" /><line x1="10" y1="2" x2="10" y2="6" />
+      <line x1="14" y1="2" x2="14" y2="6" /><line x1="18" y1="2" x2="18" y2="6" />
+      <line x1="6" y1="18" x2="6" y2="22" /><line x1="10" y1="18" x2="10" y2="22" />
+      <line x1="14" y1="18" x2="14" y2="22" /><line x1="18" y1="18" x2="18" y2="22" />
+      <circle cx="12" cy="12" r="2" />
+    </svg>
+  );
+}
 function IconSearch({ size = 16, color = "currentColor" }: { size?: number; color?: string }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -262,7 +274,9 @@ export default function PrototypePage() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
-  const [scannerMode, setScannerMode] = useState<"idle" | "live" | "captured" | "processing">("idle");
+  const [scannerMode, setScannerMode] = useState<"idle" | "live" | "captured" | "processing" | "esp32-waiting">("idle");
+  const esp32PollRef    = useRef<ReturnType<typeof setInterval> | null>(null);
+  const esp32TimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [capturedImageUrl, setCapturedImageUrl] = useState<string | null>(null);
   const [capturedBase64, setCapturedBase64] = useState<string | null>(null);
   const [capturedMime, setCapturedMime] = useState("image/jpeg");
@@ -286,7 +300,7 @@ export default function PrototypePage() {
     init();
   }, []);
 
-  useEffect(() => { return () => stopStream(); }, []);
+  useEffect(() => { return () => { stopStream(); stopEsp32Polling(); }; }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -350,6 +364,49 @@ export default function PrototypePage() {
   }
 
   function stopStream() { streamRef.current?.getTracks().forEach(t => t.stop()); streamRef.current = null; }
+
+  function stopEsp32Polling() {
+    if (esp32PollRef.current)    clearInterval(esp32PollRef.current);
+    if (esp32TimeoutRef.current) clearTimeout(esp32TimeoutRef.current);
+    esp32PollRef.current    = null;
+    esp32TimeoutRef.current = null;
+  }
+
+  function startEsp32Mode() {
+    stopStream();
+    setOcrResult(null); setOcrError(null);
+    setCapturedImageUrl(null); setCapturedBase64(null); setCapturedBlob(null);
+    setScannerMode("esp32-waiting");
+
+    esp32TimeoutRef.current = setTimeout(() => {
+      stopEsp32Polling();
+      setScannerMode("idle");
+      setOcrError("ESP32-CAM timed out. No capture received in 60 seconds.");
+    }, 60_000);
+
+    esp32PollRef.current = setInterval(async () => {
+      try {
+        const res  = await fetch("/api/esp32-poll");
+        const data = await res.json();
+        if (data.status !== "ready") return;
+
+        stopEsp32Polling();
+        const mime   = data.mimeType ?? "image/jpeg";
+        const dataUrl = `data:${mime};base64,${data.imageBase64}`;
+        setCapturedImageUrl(dataUrl);
+        setCapturedBase64(data.imageBase64);
+        setCapturedMime(mime);
+
+        const byteChars = atob(data.imageBase64);
+        const byteArr   = new Uint8Array(byteChars.length);
+        for (let i = 0; i < byteChars.length; i++) byteArr[i] = byteChars.charCodeAt(i);
+        setCapturedBlob(new Blob([byteArr], { type: mime }));
+
+        setOcrResult(data.ocrResult);
+        setScannerMode("captured");
+      } catch { /* silently retry until timeout */ }
+    }, 2_000);
+  }
 
   async function startLiveCamera() {
     setOcrResult(null); setOcrError(null);
@@ -457,7 +514,7 @@ export default function PrototypePage() {
   }
 
   function resetScanner() {
-    stopStream(); setScannerMode("idle");
+    stopStream(); stopEsp32Polling(); setScannerMode("idle");
     setCapturedImageUrl(null); setCapturedBase64(null); setCapturedBlob(null);
     setOcrResult(null); setOcrError(null);
     if (galleryInputRef.current) galleryInputRef.current.value = "";
@@ -746,6 +803,20 @@ export default function PrototypePage() {
                   <p style={{ fontSize: "0.75rem", color: txMute, marginTop: "0.25rem" }}>Start the live camera or upload an image</p>
                 </div>
               )}
+              {scannerMode === "esp32-waiting" && (
+                <div style={{ textAlign: "center", padding: "2rem" }}>
+                  <div style={{ width: 56, height: 56, borderRadius: 16, background: "rgba(20,184,166,0.1)", border: "1px solid rgba(20,184,166,0.3)", display: "grid", placeItems: "center", margin: "0 auto 1rem", boxShadow: "0 0 18px rgba(20,184,166,0.2)" }}>
+                    <IconESP32 size={26} color="#14b8a6" />
+                  </div>
+                  <p style={{ fontSize: "0.875rem", fontWeight: 600, color: "#14b8a6" }}>Waiting for ESP32-CAM…</p>
+                  <p style={{ fontSize: "0.75rem", color: txMute, marginTop: "0.25rem" }}>Reset or power your device to capture</p>
+                  <div style={{ display: "flex", gap: "0.35rem", justifyContent: "center", marginTop: "1rem" }}>
+                    {[0, 1, 2].map(i => (
+                      <div key={i} style={{ width: 6, height: 6, borderRadius: "50%", background: "#14b8a6", opacity: 0.6, animation: `pulse-dot 1.2s ease-in-out ${i * 0.4}s infinite` }} />
+                    ))}
+                  </div>
+                </div>
+              )}
               <video ref={videoRef} style={{ width: "100%", height: "100%", objectFit: "cover", display: scannerMode === "live" ? "block" : "none" }} playsInline muted />
               {(scannerMode === "captured" || scannerMode === "processing") && capturedImageUrl && (
                 <img src={capturedImageUrl} alt="Receipt" style={{ maxHeight: 280, width: "100%", objectFit: "contain" }} />
@@ -779,6 +850,9 @@ export default function PrototypePage() {
                   <button type="button" onClick={() => galleryInputRef.current?.click()} className="dash-btn-outline" style={{ display: "inline-flex", alignItems: "center", gap: "0.45rem", padding: "0.6rem 1.1rem", borderRadius: 10, background: "transparent", border: isDark ? "1px solid rgba(255,255,255,0.1)" : "1px solid rgba(0,0,0,0.12)", color: txSub, fontSize: "0.82rem", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
                     <IconUpload size={15} color={txSub} /> Upload Image
                   </button>
+                  <button type="button" onClick={startEsp32Mode} className="dash-btn-outline" style={{ display: "inline-flex", alignItems: "center", gap: "0.45rem", padding: "0.6rem 1.1rem", borderRadius: 10, background: "transparent", border: "1px solid rgba(20,184,166,0.35)", color: "#14b8a6", fontSize: "0.82rem", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+                    <IconESP32 size={15} color="#14b8a6" /> ESP32 Cam
+                  </button>
                 </>)}
                 {scannerMode === "live" && (<>
                   <button type="button" onClick={captureFrame} className="dash-btn-primary" style={{ display: "inline-flex", alignItems: "center", gap: "0.45rem", padding: "0.6rem 1.1rem", borderRadius: 10, border: "none", color: "#fff", fontSize: "0.82rem", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
@@ -795,6 +869,9 @@ export default function PrototypePage() {
                 </>)}
                 {scannerMode === "processing" && (
                   <button type="button" disabled style={{ padding: "0.6rem 1.1rem", borderRadius: 10, background: "rgba(20,184,166,0.2)", border: "none", color: "#14b8a6", fontSize: "0.82rem", fontWeight: 700, cursor: "not-allowed", fontFamily: "inherit" }}>Analyzing…</button>
+                )}
+                {scannerMode === "esp32-waiting" && (
+                  <button type="button" onClick={resetScanner} className="dash-btn-outline" style={{ display: "inline-flex", alignItems: "center", gap: "0.45rem", padding: "0.6rem 1rem", borderRadius: 10, background: "transparent", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171", fontSize: "0.82rem", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
                 )}
               </div>
               {ocrError && (
