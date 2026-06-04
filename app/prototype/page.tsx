@@ -989,7 +989,7 @@ export default function PrototypePage() {
           </form>
 
           {/* ── Expense Records ── */}
-          <div style={{ ...glass, borderRadius: 22, padding: "1.6rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
+          <div style={{ ...glass, borderRadius: 22, padding: "1.6rem", display: "flex", flexDirection: "column", gap: "1rem", maxHeight: "75vh", overflow: "hidden" }}>
             <div style={{ display: "flex", flexWrap: "wrap", alignItems: "flex-start", justifyContent: "space-between", gap: "0.75rem" }}>
               <div>
                 <h2 style={{ fontSize: "1.05rem", fontWeight: 700, color: tx, margin: 0 }}>Expense Records</h2>
@@ -1023,7 +1023,7 @@ export default function PrototypePage() {
               })}
             </div>
 
-            <div className="scroll-list" style={{ display: "flex", flexDirection: "column", gap: "0.4rem", maxHeight: 440, overflowY: "auto", paddingRight: "0.25rem" }}>
+            <div className="scroll-list" style={{ display: "flex", flexDirection: "column", gap: "0.4rem", flex: 1, minHeight: 0, overflowY: "auto", paddingRight: "0.25rem" }}>
               {filteredExpenses.map(item => {
                 const CatIcon = CATEGORY_ICON_COMPONENTS[item.category];
                 const itemSource = item.categorization_source ?? null;
