@@ -369,7 +369,11 @@ export default function PrototypePage() {
       if (expensesData) setExpenses(expensesData);
       const month = new Date().toISOString().slice(0, 7);
       const { data: incomeData } = await supabase.from("incomes").select("*").eq("month", month).order("created_at", { ascending: false });
-      if (incomeData) setIncomes(incomeData);
+      if (incomeData) {
+        setIncomes(incomeData);
+        // Keep the budgets table aligned with the income total so Chat/Insights match the dashboard.
+        syncBudget(incomeData);
+      }
       setLoadingData(false);
     };
     init();
