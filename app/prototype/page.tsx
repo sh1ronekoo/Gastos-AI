@@ -47,6 +47,14 @@ const CATEGORY_COLORS: Record<ExpenseCategory, string> = {
   Shopping: "#ec4899", Health: "#22c55e", Other: "#64748b",
 };
 
+type IncomeCategory = "Salary" | "Business" | "Freelance" | "Allowance" | "Investment" | "Other";
+type Income = { id: string; category: IncomeCategory; amount: number; month: string; created_at?: string };
+const incomeCategories: IncomeCategory[] = ["Salary", "Business", "Freelance", "Allowance", "Investment", "Other"];
+const INCOME_CATEGORY_COLORS: Record<IncomeCategory, string> = {
+  Salary: "#14b8a6", Business: "#6366f1", Freelance: "#fb923c",
+  Allowance: "#ec4899", Investment: "#22c55e", Other: "#64748b",
+};
+
 // ── SVG icon components ──────────────────────────────────────
 function IconFood({ size = 18, color = "currentColor" }: { size?: number; color?: string }) {
   return (
@@ -216,6 +224,50 @@ const CATEGORY_ICON_COMPONENTS: Record<ExpenseCategory, React.FC<{ size?: number
   Shopping: IconShopping, Health: IconHealth, Other: IconOther,
 };
 
+// ── Income category icons ────────────────────────────────────
+function IconSalary({ size = 18, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="6" width="20" height="12" rx="2" /><circle cx="12" cy="12" r="3" />
+      <line x1="6" y1="12" x2="6.01" y2="12" /><line x1="18" y1="12" x2="18.01" y2="12" />
+    </svg>
+  );
+}
+function IconBusiness({ size = 18, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="7" width="20" height="14" rx="2" /><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" />
+    </svg>
+  );
+}
+function IconFreelance({ size = 18, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="4" width="20" height="13" rx="2" /><line x1="2" y1="20" x2="22" y2="20" />
+    </svg>
+  );
+}
+function IconAllowance({ size = 18, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="20 12 20 22 4 22 4 12" /><rect x="2" y="7" width="20" height="5" />
+      <line x1="12" y1="22" x2="12" y2="7" /><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z" /><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z" />
+    </svg>
+  );
+}
+function IconInvestment({ size = 18, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="23 6 13.5 15.5 8.5 10.5 1 18" /><polyline points="17 6 23 6 23 12" />
+    </svg>
+  );
+}
+
+const INCOME_CATEGORY_ICON_COMPONENTS: Record<IncomeCategory, React.FC<{ size?: number; color?: string }>> = {
+  Salary: IconSalary, Business: IconBusiness, Freelance: IconFreelance,
+  Allowance: IconAllowance, Investment: IconInvestment, Other: IconOther,
+};
+
 // ── Source badge ─────────────────────────────────────────────
 function SourceBadge({ source }: { source: "ml" }) {
   return (
@@ -272,7 +324,10 @@ export default function PrototypePage() {
   const [amount, setAmount] = useState("");
   const [merchantName, setMerchantName] = useState("");
   const [notes, setNotes] = useState("");
-  const [monthlyBudget, setMonthlyBudget] = useState("10000");
+  const [incomes, setIncomes] = useState<Income[]>([]);
+  const [incomeCategory, setIncomeCategory] = useState<IncomeCategory>("Salary");
+  const [incomeAmount, setIncomeAmount] = useState("");
+  const [incomeError, setIncomeError] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<ExpenseCategory | "All">("All");
   const [searchTerm, setSearchTerm] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -313,8 +368,8 @@ export default function PrototypePage() {
       const { data: expensesData } = await supabase.from("expenses").select("*").order("created_at", { ascending: false });
       if (expensesData) setExpenses(expensesData);
       const month = new Date().toISOString().slice(0, 7);
-      const { data: budgetData } = await supabase.from("budgets").select("*").eq("month", month).single();
-      if (budgetData) setMonthlyBudget(String(budgetData.monthly_budget));
+      const { data: incomeData } = await supabase.from("incomes").select("*").eq("month", month).order("created_at", { ascending: false });
+      if (incomeData) setIncomes(incomeData);
       setLoadingData(false);
     };
     init();
@@ -714,14 +769,46 @@ export default function PrototypePage() {
     if (!error) setExpenses(prev => prev.filter(item => item.id !== expenseId));
   }
 
-  async function handleBudgetChange(value: string) {
-    setMonthlyBudget(value);
-    const parsedBudget = parseFloat(value);
-    if (Number.isNaN(parsedBudget) || parsedBudget <= 0) return;
+  // Keep the budgets table in sync with the income total so Chat/Insights stay correct.
+  async function syncBudget(list: Income[]) {
+    const total = list.reduce((s, i) => s + i.amount, 0);
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
     const month = new Date().toISOString().slice(0, 7);
-    await supabase.from("budgets").upsert({ user_id: user.id, monthly_budget: parsedBudget, month }, { onConflict: "user_id,month" });
+    await supabase.from("budgets").upsert({ user_id: user.id, monthly_budget: total, month }, { onConflict: "user_id,month" });
+  }
+
+  async function handleAddIncome(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setIncomeError(null);
+    const parsedAmount = Number(incomeAmount);
+    if (Number.isNaN(parsedAmount) || parsedAmount <= 0) {
+      setIncomeError("Enter an amount greater than 0.");
+      return;
+    }
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setIncomeError("You must be signed in to add income."); return; }
+    const month = new Date().toISOString().slice(0, 7);
+    const { data, error } = await supabase.from("incomes").insert({
+      user_id: user.id, category: incomeCategory, amount: parsedAmount, month,
+    }).select().single();
+    if (error || !data) {
+      setIncomeError(error?.message ?? "Could not save income. Make sure the 'incomes' table exists in Supabase.");
+      return;
+    }
+    const updated = [data as Income, ...incomes];
+    setIncomes(updated);
+    setIncomeAmount("");
+    syncBudget(updated);
+  }
+
+  async function handleDeleteIncome(incomeId: string) {
+    const { error } = await supabase.from("incomes").delete().eq("id", incomeId);
+    if (!error) {
+      const updated = incomes.filter(i => i.id !== incomeId);
+      setIncomes(updated);
+      syncBudget(updated);
+    }
   }
 
   const totals = useMemo(() => {
@@ -732,7 +819,13 @@ export default function PrototypePage() {
     return { total, byCategory, topCategory: topEntry?.[0] || "None", average };
   }, [expenses]);
 
-  const budgetValue = Number(monthlyBudget) || 0;
+  const totalIncome = useMemo(() => incomes.reduce((s, i) => s + i.amount, 0), [incomes]);
+  const incomeByCategory = useMemo(() => incomes.reduce<Record<IncomeCategory, number>>(
+    (acc, i) => { acc[i.category] = (acc[i.category] || 0) + i.amount; return acc; },
+    { Salary: 0, Business: 0, Freelance: 0, Allowance: 0, Investment: 0, Other: 0 }
+  ), [incomes]);
+
+  const budgetValue = totalIncome;
   const budgetLeft = Math.max(budgetValue - totals.total, 0);
   const budgetUsage = budgetValue > 0 ? Math.min((totals.total / budgetValue) * 100, 100) : 0;
   const budgetGrad = budgetUsage >= 80 ? "linear-gradient(90deg,#ef4444,#f87171)" : budgetUsage >= 60 ? "linear-gradient(90deg,#fb923c,#fbbf24)" : "linear-gradient(90deg,#14b8a6,#2dd4bf)";
@@ -1208,11 +1301,6 @@ export default function PrototypePage() {
               <textarea className="dash-input" rows={2} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional notes…" style={{ ...inputBase, resize: "none" }} />
             </div>
 
-            <div>
-              <label style={{ display: "block", fontSize: "0.72rem", fontWeight: 600, color: txMute, marginBottom: "0.35rem", letterSpacing: "0.04em" }}>Monthly Budget (PHP)</label>
-              <input className="dash-input" type="number" min="0" step="1" value={monthlyBudget} onChange={e => handleBudgetChange(e.target.value)} placeholder="10000" style={inputBase} />
-            </div>
-
             {pendingReceiptUrl && (
               <div style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", padding: "0.6rem 0.8rem", borderRadius: 10, background: "rgba(20,184,166,0.08)", border: "1px solid rgba(20,184,166,0.2)", fontSize: "0.78rem", color: "#14b8a6" }}>
                 <IconReceipt size={14} color="#14b8a6" /> Receipt image ready to attach
@@ -1319,11 +1407,117 @@ export default function PrototypePage() {
           </div>
         </div>
 
+        {/* ── Source of Income (with Income Breakdown) ── */}
+        <div>
+          <div style={{ ...glass, borderRadius: 22, padding: "1.6rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
+            <div>
+              <h2 style={{ fontSize: "1.05rem", fontWeight: 700, color: tx, margin: 0 }}>Source of Income</h2>
+              <p style={{ fontSize: "0.72rem", color: txMute, marginTop: "0.15rem" }}>Your monthly budget is built from your income</p>
+            </div>
+
+            <div style={{ padding: "1rem", borderRadius: 14, background: isDark ? "rgba(20,184,166,0.06)" : "rgba(20,184,166,0.05)", border: "1px solid rgba(20,184,166,0.2)" }}>
+              <p style={{ fontSize: "0.68rem", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: txMute }}>Total Monthly Income · Budget</p>
+              <p style={{ fontSize: "1.8rem", fontWeight: 800, letterSpacing: "-0.02em", color: "#14b8a6", marginTop: "0.2rem" }}>{pesoFormatter.format(totalIncome)}</p>
+            </div>
+
+            <form onSubmit={handleAddIncome} style={{ display: "flex", flexDirection: "column", gap: "0.7rem" }}>
+              <label style={{ fontSize: "0.72rem", fontWeight: 600, color: txMute, letterSpacing: "0.04em" }}>Income Category</label>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.4rem" }}>
+                {incomeCategories.map(c => {
+                  const CIcon = INCOME_CATEGORY_ICON_COMPONENTS[c];
+                  const active = incomeCategory === c;
+                  return (
+                    <button key={c} type="button" onClick={() => setIncomeCategory(c)}
+                      className={`cat-chip${active ? " active" : ""}`}
+                      style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem", padding: "0.28rem 0.65rem", borderRadius: 999, fontSize: "0.7rem", fontWeight: 600, background: "transparent", border: isDark ? "1px solid rgba(255,255,255,0.08)" : "1px solid rgba(0,0,0,0.1)", color: txMute, fontFamily: "inherit" }}>
+                      <CIcon size={11} color={active ? "#14b8a6" : INCOME_CATEGORY_COLORS[c]} />
+                      {c}
+                    </button>
+                  );
+                })}
+              </div>
+              <div style={{ display: "flex", gap: "0.5rem" }}>
+                <input className="dash-input" type="number" min="0.01" step="0.01" value={incomeAmount} onChange={e => setIncomeAmount(e.target.value)} placeholder="Amount (PHP)" style={{ ...inputBase, flex: 1 }} />
+                <button type="submit" className="dash-btn-primary" style={{ padding: "0.7rem 1.1rem", borderRadius: 10, border: "none", color: "#fff", fontSize: "0.82rem", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>+ Add</button>
+              </div>
+              {incomeError && (
+                <div style={{ padding: "0.6rem 0.8rem", borderRadius: 10, background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", fontSize: "0.76rem", color: "#f87171", display: "flex", gap: "0.5rem", alignItems: "flex-start" }}>
+                  <IconWarning size={14} color="#f87171" /><span>{incomeError}</span>
+                </div>
+              )}
+            </form>
+
+            <div className="scroll-list" style={{ display: "flex", flexDirection: "column", gap: "0.4rem", maxHeight: 220, overflowY: "auto", paddingRight: "0.25rem" }}>
+              {incomes.map(item => {
+                const CIcon = INCOME_CATEGORY_ICON_COMPONENTS[item.category];
+                const color = INCOME_CATEGORY_COLORS[item.category];
+                return (
+                  <div key={item.id} className="expense-row" style={{ border: isDark ? "1px solid rgba(255,255,255,0.05)" : "1px solid rgba(0,0,0,0.07)", overflow: "hidden", flexShrink: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.7rem 0.9rem" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.7rem", minWidth: 0 }}>
+                        <div style={{ width: 34, height: 34, borderRadius: 9, background: `${color}18`, border: `1px solid ${color}30`, display: "grid", placeItems: "center", flexShrink: 0 }}>
+                          <CIcon size={15} color={color} />
+                        </div>
+                        <div style={{ minWidth: 0 }}>
+                          <p style={{ fontWeight: 600, fontSize: "0.85rem", color: tx }}>{item.category}</p>
+                          {item.created_at && <span style={{ fontSize: "0.7rem", color: txMute }}>{new Date(item.created_at).toLocaleDateString("en-PH", { month: "short", day: "numeric" })}</span>}
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexShrink: 0 }}>
+                        <span style={{ fontWeight: 700, fontSize: "0.88rem", color: "#14b8a6" }}>{pesoFormatter.format(item.amount)}</span>
+                        <button type="button" className="del-btn" onClick={() => handleDeleteIncome(item.id)}
+                          style={{ padding: "0.25rem 0.6rem", borderRadius: 7, background: "transparent", border: "1px solid rgba(239,68,68,0.18)", color: "#f87171", fontSize: "0.7rem", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Delete</button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+              {incomes.length === 0 && (
+                <div style={{ padding: "1.8rem 1rem", textAlign: "center", borderRadius: 14, border: isDark ? "1.5px dashed rgba(255,255,255,0.06)" : "1.5px dashed rgba(0,0,0,0.08)", color: txMute, fontSize: "0.82rem" }}>
+                  No income yet. Add a source above to set your budget.
+                </div>
+              )}
+            </div>
+
+            {/* ── Income Breakdown ── */}
+            <div style={{ paddingTop: "1.2rem", borderTop: isDark ? "1px solid rgba(255,255,255,0.06)" : "1px solid rgba(0,0,0,0.07)" }}>
+              <h3 style={{ fontSize: "0.95rem", fontWeight: 700, color: tx, margin: "0 0 1rem" }}>Income Breakdown</h3>
+              {totalIncome === 0 ? (
+                <p style={{ fontSize: "0.82rem", color: txMute }}>Add income sources to see your breakdown.</p>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+                  {Object.entries(incomeByCategory).sort((a, b) => b[1] - a[1]).filter(([, v]) => v > 0).map(([name, value]) => {
+                    const pct = totalIncome > 0 ? (value / totalIncome) * 100 : 0;
+                    const color = INCOME_CATEGORY_COLORS[name as IncomeCategory] ?? "#64748b";
+                    const CIcon = INCOME_CATEGORY_ICON_COMPONENTS[name as IncomeCategory] ?? IconOther;
+                    return (
+                      <div key={name}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.4rem" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                            <div style={{ width: 26, height: 26, borderRadius: 7, background: `${color}18`, display: "grid", placeItems: "center" }}>
+                              <CIcon size={13} color={color} />
+                            </div>
+                            <span style={{ fontSize: "0.85rem", fontWeight: 600, color: tx }}>{name}</span>
+                          </div>
+                          <span style={{ fontSize: "0.78rem", color: txSub }}>{pesoFormatter.format(value)} · <span style={{ color }}>{pct.toFixed(0)}%</span></span>
+                        </div>
+                        <div style={{ height: 6, borderRadius: 999, background: isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.06)", overflow: "hidden" }}>
+                          <div style={{ height: "100%", borderRadius: 999, background: color, width: `${pct}%`, transition: "width 0.8s cubic-bezier(0.22,1,0.36,1)", opacity: 0.9 }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
         {/* ── Budget Health + Category Breakdown ── */}
         <div className="dash-cols-main" style={{ display: "grid", gridTemplateColumns: "2fr 3fr", gap: "1.2rem" }}>
           <div style={{ ...glass, borderRadius: 22, padding: "1.6rem" }}>
             <h2 style={{ fontSize: "1.05rem", fontWeight: 700, color: tx, margin: "0 0 0.2rem" }}>Budget Health</h2>
-            <p style={{ fontSize: "0.78rem", color: txMute, marginBottom: "1.2rem" }}>Remaining budget this month</p>
+            <p style={{ fontSize: "0.78rem", color: txMute, marginBottom: "1.2rem" }}>Remaining from your income this month</p>
             <p style={{ fontSize: "2.2rem", fontWeight: 800, letterSpacing: "-0.03em", color: budgetUsage >= 80 ? "#f87171" : "#14b8a6", marginBottom: "0.8rem" }}>{pesoFormatter.format(budgetLeft)}</p>
             <div style={{ position: "relative", height: 8, borderRadius: 999, background: isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.07)", overflow: "hidden", marginBottom: "0.5rem" }}>
               <div style={{ position: "absolute", inset: 0, width: `${budgetUsage}%`, background: budgetGrad, borderRadius: 999, transition: "width 0.8s cubic-bezier(0.22,1,0.36,1)" }} />
