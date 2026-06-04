@@ -749,6 +749,19 @@ export default function PrototypePage() {
           .dash-cols-main { grid-template-columns: 1fr !important; }
         }
         @media (max-width: 540px) { .dash-cols-4 { grid-template-columns: 1fr !important; } }
+
+        @media (max-width: 640px) {
+          .cat-chips-row { overflow-x: auto !important; flex-wrap: nowrap !important; padding-bottom: 4px; scrollbar-width: none; }
+          .cat-chips-row::-webkit-scrollbar { display: none; }
+          .rec-row-inner { padding: 0.55rem 0.65rem !important; }
+          .rec-cat-icon { display: none !important; }
+          .rec-amount { font-size: 0.78rem !important; }
+          .del-label { display: none !important; }
+          .del-icon { display: inline !important; }
+          .rec-meta { flex-wrap: nowrap !important; overflow: hidden; max-width: 100%; }
+          .rec-meta span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 80px; }
+          .rec-expand { display: none !important; }
+        }
       `}</style>
 
       <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
@@ -1008,7 +1021,7 @@ export default function PrototypePage() {
               </div>
             </div>
 
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.4rem" }}>
+            <div className="cat-chips-row" style={{ display: "flex", flexWrap: "wrap", gap: "0.4rem" }}>
               {(["All", ...categories] as (ExpenseCategory | "All")[]).map(c => {
                 const CIcon = c !== "All" ? CATEGORY_ICON_COMPONENTS[c as ExpenseCategory] : null;
                 const cColor = c !== "All" ? CATEGORY_COLORS[c as ExpenseCategory] : txMute;
@@ -1030,14 +1043,14 @@ export default function PrototypePage() {
 
                 return (
                   <div key={item.id} className="expense-row" style={{ border: isDark ? "1px solid rgba(255,255,255,0.05)" : "1px solid rgba(0,0,0,0.07)", overflow: "hidden" }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.8rem 1rem" }}>
+                    <div className="rec-row-inner" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.8rem 1rem" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", minWidth: 0 }}>
-                        <div style={{ width: 36, height: 36, borderRadius: 10, background: `${CATEGORY_COLORS[item.category]}18`, border: `1px solid ${CATEGORY_COLORS[item.category]}30`, display: "grid", placeItems: "center", flexShrink: 0 }}>
+                        <div className="rec-cat-icon" style={{ width: 36, height: 36, borderRadius: 10, background: `${CATEGORY_COLORS[item.category]}18`, border: `1px solid ${CATEGORY_COLORS[item.category]}30`, display: "grid", placeItems: "center", flexShrink: 0 }}>
                           <CatIcon size={16} color={CATEGORY_COLORS[item.category]} />
                         </div>
                         <div style={{ minWidth: 0 }}>
                           <p style={{ fontWeight: 600, fontSize: "0.875rem", color: tx, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.title}</p>
-                          <div style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap", marginTop: "0.15rem", alignItems: "center" }}>
+                          <div className="rec-meta" style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap", marginTop: "0.15rem", alignItems: "center" }}>
                             <span style={{ fontSize: "0.7rem", color: txMute }}>{item.category}</span>
                             {item.merchant_name && <span style={{ fontSize: "0.7rem", color: txMute }}>· {item.merchant_name}</span>}
                             {item.created_at && <span style={{ fontSize: "0.7rem", color: txMute }}>· {new Date(item.created_at).toLocaleDateString("en-PH", { month: "short", day: "numeric" })}</span>}
@@ -1046,16 +1059,17 @@ export default function PrototypePage() {
                         </div>
                       </div>
                       <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexShrink: 0, marginLeft: "0.5rem" }}>
-                        <span style={{ fontWeight: 700, fontSize: "0.9rem", color: tx }}>{pesoFormatter.format(item.amount)}</span>
+                        <span className="rec-amount" style={{ fontWeight: 700, fontSize: "0.9rem", color: tx, whiteSpace: "nowrap" }}>{pesoFormatter.format(item.amount)}</span>
                         {(item.notes || item.receipt_image_url) && (
-                          <button type="button" onClick={() => setExpandedId(expandedId === item.id ? null : item.id)}
+                          <button type="button" className="rec-expand" onClick={() => setExpandedId(expandedId === item.id ? null : item.id)}
                             style={{ padding: "0.2rem 0.45rem", borderRadius: 6, background: "transparent", border: isDark ? "1px solid rgba(255,255,255,0.08)" : "1px solid rgba(0,0,0,0.1)", cursor: "pointer", fontSize: "0.62rem", color: txMute }}>
                             {expandedId === item.id ? "▲" : "▼"}
                           </button>
                         )}
                         <button type="button" className="del-btn" onClick={() => handleDeleteExpense(item.id)}
                           style={{ padding: "0.25rem 0.6rem", borderRadius: 7, background: "transparent", border: "1px solid rgba(239,68,68,0.18)", color: "#f87171", fontSize: "0.7rem", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
-                          Delete
+                          <span className="del-label">Delete</span>
+                          <span className="del-icon" style={{ display: "none" }}>×</span>
                         </button>
                       </div>
                     </div>
