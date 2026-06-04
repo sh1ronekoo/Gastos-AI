@@ -17,6 +17,22 @@ type OCRResult = {
   category: ExpenseCategory | null; items: string[]; raw_text: string | null; confidence: number;
 };
 
+type QueueItemStatus = "pending" | "processing" | "done" | "error";
+type QueuedReceipt = {
+  id: string;
+  imageUrl: string;
+  base64: string;
+  mime: string;
+  blob: Blob | null;
+  ocrResult: OCRResult | null;
+  ocrError: string | null;
+  receiptUrl?: string | null;
+  status: QueueItemStatus;
+  source: "live" | "gallery" | "esp32";
+  saved: boolean;
+  skipped: boolean;
+};
+
 type CategorizationState =
   | { status: "idle" }
   | { status: "loading" }
@@ -274,7 +290,7 @@ export default function PrototypePage() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
-  const [scannerMode, setScannerMode] = useState<"idle" | "live" | "captured" | "processing" | "esp32-waiting">("idle");
+  const [scannerMode, setScannerMode] = useState<"idle" | "live" | "captured" | "processing" | "esp32-waiting" | "review">("idle");
   const esp32PollRef    = useRef<ReturnType<typeof setInterval> | null>(null);
   const esp32TimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [capturedImageUrl, setCapturedImageUrl] = useState<string | null>(null);
@@ -283,6 +299,10 @@ export default function PrototypePage() {
   const [capturedBlob, setCapturedBlob] = useState<Blob | null>(null);
   const [ocrResult, setOcrResult] = useState<OCRResult | null>(null);
   const [ocrError, setOcrError] = useState<string | null>(null);
+  const [queue, setQueue] = useState<QueuedReceipt[]>([]);
+  const [activeQueueId, setActiveQueueId] = useState<string | null>(null);
+  const esp32SeenIds = useRef<Set<string>>(new Set());
+  const queueRef = useRef<QueuedReceipt[]>([]);
   const [isAutoCategorized, setIsAutoCategorized] = useState(false);
   const [pendingReceiptUrl, setPendingReceiptUrl] = useState<string | null>(null);
   const [pendingRawOcr, setPendingRawOcr] = useState<string | null>(null);
@@ -310,6 +330,23 @@ export default function PrototypePage() {
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
+
+  useEffect(() => { queueRef.current = queue; }, [queue]);
+
+  const activeItem = useMemo(() => queue.find(q => q.id === activeQueueId) ?? null, [queue, activeQueueId]);
+  const reviewables = useMemo(() => queue.filter(q => !q.skipped), [queue]);
+  const activeReviewIndex = useMemo(() => reviewables.findIndex(q => q.id === activeQueueId), [reviewables, activeQueueId]);
+
+  // Mirror the active queue item into the legacy preview/extracted-data state.
+  useEffect(() => {
+    if (!activeItem) return;
+    setCapturedImageUrl(activeItem.imageUrl);
+    setCapturedBase64(activeItem.base64);
+    setCapturedMime(activeItem.mime);
+    setCapturedBlob(activeItem.blob);
+    setOcrResult(activeItem.ocrResult);
+    setOcrError(activeItem.ocrError);
+  }, [activeItem]);
 
   const triggerCategorization = useCallback((newTitle: string, newMerchant: string) => {
     if (userOverrideRef.current) return;
@@ -372,38 +409,64 @@ export default function PrototypePage() {
     esp32TimeoutRef.current = null;
   }
 
+  // ── Queue helpers ────────────────────────────────────────────
+  function base64ToBlob(base64: string, mime: string): Blob {
+    const byteChars = atob(base64);
+    const byteArr   = new Uint8Array(byteChars.length);
+    for (let i = 0; i < byteChars.length; i++) byteArr[i] = byteChars.charCodeAt(i);
+    return new Blob([byteArr], { type: mime });
+  }
+
+  function makeQueued(args: {
+    imageUrl: string; base64: string; mime: string; blob: Blob | null;
+    ocrResult?: OCRResult | null; source: QueuedReceipt["source"];
+  }): QueuedReceipt {
+    const uid = typeof crypto !== "undefined" && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    return {
+      id: uid, imageUrl: args.imageUrl, base64: args.base64, mime: args.mime,
+      blob: args.blob, ocrResult: args.ocrResult ?? null, ocrError: null,
+      receiptUrl: null, status: args.ocrResult ? "done" : "pending",
+      source: args.source, saved: false, skipped: false,
+    };
+  }
+
   function startEsp32Mode() {
     stopStream();
     setOcrResult(null); setOcrError(null);
     setCapturedImageUrl(null); setCapturedBase64(null); setCapturedBlob(null);
+    setQueue([]); setActiveQueueId(null); esp32SeenIds.current.clear();
     setScannerMode("esp32-waiting");
 
-    esp32TimeoutRef.current = setTimeout(() => {
-      stopEsp32Polling();
-      setScannerMode("idle");
-      setOcrError("ESP32-CAM timed out. No capture received in 60 seconds.");
-    }, 60_000);
+    const armTimeout = () => {
+      if (esp32TimeoutRef.current) clearTimeout(esp32TimeoutRef.current);
+      esp32TimeoutRef.current = setTimeout(() => {
+        stopEsp32Polling();
+        const current = queueRef.current;
+        if (current.length > 0) { processQueue(current); }
+        else { setScannerMode("idle"); setOcrError("ESP32-CAM timed out. No capture received in 60 seconds."); }
+      }, 60_000);
+    };
+    armTimeout();
 
     esp32PollRef.current = setInterval(async () => {
       try {
         const res  = await fetch("/api/esp32-poll");
         const data = await res.json();
         if (data.status !== "ready") return;
+        if (data.id && esp32SeenIds.current.has(data.id)) return;
+        if (data.id) esp32SeenIds.current.add(data.id);
 
-        stopEsp32Polling();
-        const mime   = data.mimeType ?? "image/jpeg";
+        const mime    = data.mimeType ?? "image/jpeg";
         const dataUrl = `data:${mime};base64,${data.imageBase64}`;
-        setCapturedImageUrl(dataUrl);
-        setCapturedBase64(data.imageBase64);
-        setCapturedMime(mime);
-
-        const byteChars = atob(data.imageBase64);
-        const byteArr   = new Uint8Array(byteChars.length);
-        for (let i = 0; i < byteChars.length; i++) byteArr[i] = byteChars.charCodeAt(i);
-        setCapturedBlob(new Blob([byteArr], { type: mime }));
-
-        setOcrResult(data.ocrResult);
-        setScannerMode("captured");
+        const item = makeQueued({
+          imageUrl: dataUrl, base64: data.imageBase64, mime,
+          blob: base64ToBlob(data.imageBase64, mime),
+          ocrResult: data.ocrResult ?? null, source: "esp32",
+        });
+        setQueue(prev => [...prev, item]);
+        armTimeout(); // got a capture → reset idle timer
       } catch { /* silently retry until timeout */ }
     }, 2_000);
   }
@@ -411,6 +474,7 @@ export default function PrototypePage() {
   async function startLiveCamera() {
     setOcrResult(null); setOcrError(null);
     setCapturedImageUrl(null); setCapturedBase64(null); setCapturedBlob(null);
+    if (scannerMode === "idle") { setQueue([]); setActiveQueueId(null); }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } } });
       streamRef.current = stream;
@@ -425,26 +489,37 @@ export default function PrototypePage() {
     canvas.width = video.videoWidth; canvas.height = video.videoHeight;
     canvas.getContext("2d")?.drawImage(video, 0, 0);
     const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
-    stopStream(); setCapturedImageUrl(dataUrl); setCapturedBase64(dataUrl.split(",")[1]); setCapturedMime("image/jpeg");
-    canvas.toBlob(blob => { if (blob) setCapturedBlob(blob); }, "image/jpeg", 0.92);
-    setScannerMode("captured");
+    const base64  = dataUrl.split(",")[1];
+    canvas.toBlob(blob => {
+      const item = makeQueued({ imageUrl: dataUrl, base64, mime: "image/jpeg", blob: blob ?? base64ToBlob(base64, "image/jpeg"), source: "live" });
+      setQueue(prev => [...prev, item]);
+    }, "image/jpeg", 0.92);
+    // stay in "live" so the user can snap another shot
   }
 
-  function handleGalleryPick(file: File | undefined) {
-    if (!file || !file.type.startsWith("image/")) return;
-    stopStream(); setOcrResult(null); setOcrError(null); setCapturedBlob(file);
-    const reader = new FileReader();
-    reader.onload = e => {
-      const dataUrl = e.target?.result as string;
-      setCapturedImageUrl(dataUrl); setCapturedBase64(dataUrl.split(",")[1]); setCapturedMime(file.type); setScannerMode("captured");
-    };
-    reader.readAsDataURL(file);
+  function handleGalleryPick(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    stopStream(); setOcrError(null);
+    setQueue([]); setActiveQueueId(null);
+    const images = Array.from(files).filter(f => f.type.startsWith("image/"));
+    if (images.length === 0) return;
+
+    Promise.all(images.map(file => new Promise<QueuedReceipt>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = e => {
+        const dataUrl = e.target?.result as string;
+        resolve(makeQueued({ imageUrl: dataUrl, base64: dataUrl.split(",")[1], mime: file.type, blob: file, source: "gallery" }));
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    }))).then(items => { setQueue(items); processQueue(items); })
+      .catch(() => setOcrError("Failed to read one or more images."));
   }
 
   async function uploadReceiptImage(blob: Blob, mime: string): Promise<string | null> {
     try {
       const ext = mime === "image/png" ? "png" : "jpg";
-      const fileName = `receipt_${Date.now()}.${ext}`;
+      const fileName = `receipt_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
       const { data, error } = await supabase.storage.from("receipts").upload(fileName, blob, { contentType: mime, upsert: false });
       if (error || !data) return null;
       const { data: urlData } = supabase.storage.from("receipts").getPublicUrl(data.path);
@@ -452,51 +527,73 @@ export default function PrototypePage() {
     } catch { return null; }
   }
 
-  async function runOCR() {
-    if (!capturedBase64) return;
-    setScannerMode("processing"); setOcrError(null);
-    try {
-      const res = await fetch("/api/ocr", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image: capturedBase64, mimeType: capturedMime }) });
-      const data = await res.json();
-      if (data.error) { setOcrError(data.error); setScannerMode("captured"); return; }
-      setOcrResult(data); setScannerMode("captured");
-    } catch { setOcrError("Failed to process receipt. Please try again."); setScannerMode("captured"); }
+  // OCR every pending item, then load the first reviewable into the form.
+  async function processQueue(items: QueuedReceipt[]) {
+    setScannerMode("review");
+    const working = items.map(i => ({ ...i }));
+
+    for (const item of working) {
+      if (item.status !== "pending") continue;
+      item.status = "processing";
+      setQueue(prev => prev.map(x => x.id === item.id ? { ...x, status: "processing" } : x));
+      try {
+        const res = await fetch("/api/ocr", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image: item.base64, mimeType: item.mime }) });
+        const data = await res.json();
+        if (data.error) {
+          item.status = "error"; item.ocrError = data.error;
+        } else {
+          item.status = "done"; item.ocrResult = data; item.ocrError = null;
+        }
+      } catch {
+        item.status = "error"; item.ocrError = "Failed to process receipt.";
+      }
+      setQueue(prev => prev.map(x => x.id === item.id ? { ...x, status: item.status, ocrResult: item.ocrResult, ocrError: item.ocrError } : x));
+    }
+
+    const first = working.find(q => q.status === "done" && !q.saved && !q.skipped);
+    if (first) loadQueueItemIntoForm(first);
+    else {
+      const firstErr = working.find(q => !q.saved && !q.skipped);
+      if (firstErr) setActiveQueueId(firstErr.id); // show the error item
+    }
   }
 
-  async function applyOCRToForm() {
-    if (!ocrResult) return;
+  // Upload the receipt image (once) and fill the expense form from an item's OCR result.
+  async function loadQueueItemIntoForm(item: QueuedReceipt) {
+    setActiveQueueId(item.id);
+    if (!item.ocrResult) return; // error item — leave form untouched
 
-    let receiptUrl: string | null = null;
-    if (capturedBlob) receiptUrl = await uploadReceiptImage(capturedBlob, capturedMime);
+    let receiptUrl = item.receiptUrl ?? null;
+    if (!receiptUrl && item.blob) {
+      receiptUrl = await uploadReceiptImage(item.blob, item.mime);
+      setQueue(prev => prev.map(x => x.id === item.id ? { ...x, receiptUrl } : x));
+    }
 
-    const extractedTitle    = ocrResult.merchant ?? "";
-    const extractedMerchant = ocrResult.merchant ?? "";
+    const ocr = item.ocrResult;
+    const extractedTitle    = ocr.merchant ?? "";
+    const extractedMerchant = ocr.merchant ?? "";
 
-    if (extractedTitle)          setTitle(extractedTitle);
-    if (extractedMerchant)       setMerchantName(extractedMerchant);
-    if (ocrResult.amount)        setAmount(String(ocrResult.amount));
-    if (ocrResult.items?.length) setNotes(ocrResult.items.join(", "));
+    setTitle(extractedTitle);
+    setMerchantName(extractedMerchant);
+    setAmount(ocr.amount != null ? String(ocr.amount) : "");
+    setNotes(ocr.items?.length ? ocr.items.join(", ") : "");
 
     setPendingReceiptUrl(receiptUrl);
-    setPendingRawOcr(ocrResult.raw_text ?? null);
+    setPendingRawOcr(ocr.raw_text ?? null);
 
     userOverrideRef.current = false;
 
     if (extractedTitle || extractedMerchant) {
       setCatState({ status: "loading" });
       setIsAutoCategorized(false);
-
       try {
         const res = await fetch("/api/categorize", {
           method:  "POST",
           headers: { "Content-Type": "application/json" },
           body:    JSON.stringify({ title: extractedTitle, merchantName: extractedMerchant }),
         });
-
         if (!res.ok) throw new Error("categorize failed");
-
         const data = await res.json();
-
         if (!userOverrideRef.current) {
           setCategory(data.category as ExpenseCategory);
           setIsAutoCategorized(true);
@@ -513,10 +610,70 @@ export default function PrototypePage() {
     formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
+  // Move to the next unsaved/unskipped item, computed from a given list.
+  function advanceFrom(list: QueuedReceipt[], excludeId: string | null) {
+    const next = list.find(q => q.id !== excludeId && !q.saved && !q.skipped && q.status === "done")
+              ?? list.find(q => q.id !== excludeId && !q.saved && !q.skipped);
+    if (next) loadQueueItemIntoForm(next);
+    else resetScanner();
+  }
+
+  // Backward-compatible wrapper used by the "Load this receipt" button.
+  function applyOCRToForm() {
+    if (activeItem) loadQueueItemIntoForm(activeItem);
+  }
+
+  // Re-run OCR for the active item (manual retry).
+  async function runOCR() {
+    if (!activeItem) return;
+    const id = activeItem.id;
+    setQueue(prev => prev.map(x => x.id === id ? { ...x, status: "processing", ocrError: null } : x));
+    try {
+      const res = await fetch("/api/ocr", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image: activeItem.base64, mimeType: activeItem.mime }) });
+      const data = await res.json();
+      if (data.error) {
+        setQueue(prev => prev.map(x => x.id === id ? { ...x, status: "error", ocrError: data.error } : x));
+      } else {
+        setQueue(prev => prev.map(x => x.id === id ? { ...x, status: "done", ocrResult: data, ocrError: null } : x));
+        loadQueueItemIntoForm({ ...activeItem, status: "done", ocrResult: data });
+      }
+    } catch {
+      setQueue(prev => prev.map(x => x.id === id ? { ...x, status: "error", ocrError: "Failed to process receipt. Please try again." } : x));
+    }
+  }
+
+  function removeFromQueue(id: string) {
+    const remaining = queue.filter(q => q.id !== id);
+    setQueue(remaining);
+    if (id === activeQueueId) {
+      clearForm();
+      setActiveQueueId(null);
+      if (remaining.length === 0) resetScanner();
+      else advanceFrom(remaining, id);
+    }
+  }
+
+  function skipActive() {
+    if (!activeQueueId) return;
+    const id = activeQueueId;
+    const updated = queue.map(q => q.id === id ? { ...q, skipped: true } : q);
+    setQueue(updated);
+    clearForm();
+    advanceFrom(updated, id);
+  }
+
+  function clearForm() {
+    setTitle(""); setAmount(""); setCategory("Food"); setMerchantName(""); setNotes("");
+    setIsAutoCategorized(false); setCategorizationSource(null);
+    setCatState({ status: "idle" }); userOverrideRef.current = false;
+    setPendingReceiptUrl(null); setPendingRawOcr(null);
+  }
+
   function resetScanner() {
     stopStream(); stopEsp32Polling(); setScannerMode("idle");
     setCapturedImageUrl(null); setCapturedBase64(null); setCapturedBlob(null);
     setOcrResult(null); setOcrError(null);
+    setQueue([]); setActiveQueueId(null); esp32SeenIds.current.clear();
     if (galleryInputRef.current) galleryInputRef.current.value = "";
   }
 
@@ -535,11 +692,15 @@ export default function PrototypePage() {
     }).select().single();
     if (!error && data) {
       setExpenses(prev => [data, ...prev]);
-      setTitle(""); setAmount(""); setCategory("Food"); setMerchantName(""); setNotes("");
-      setIsAutoCategorized(false); setCategorizationSource(null);
-      setCatState({ status: "idle" }); userOverrideRef.current = false;
-      setPendingReceiptUrl(null); setPendingRawOcr(null);
-      resetScanner();
+      clearForm();
+      const savedId = activeQueueId;
+      if (savedId) {
+        const updated = queue.map(q => q.id === savedId ? { ...q, saved: true } : q);
+        setQueue(updated);
+        advanceFrom(updated, savedId);
+      } else {
+        resetScanner();
+      }
     }
   }
 
@@ -796,13 +957,13 @@ export default function PrototypePage() {
                 <p style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "#14b8a6" }}>OCR · AI-Powered</p>
               </div>
               <h2 style={{ fontSize: "1.2rem", fontWeight: 700, color: tx, margin: 0 }}>Scan a Receipt</h2>
-              <p style={{ fontSize: "0.82rem", color: txSub, marginTop: "0.3rem" }}>Use your live camera or upload a photo. Gemini AI extracts and categorizes automatically.</p>
+              <p style={{ fontSize: "0.82rem", color: txSub, marginTop: "0.3rem" }}>Scan one or many receipts — live camera, photo upload, or ESP32-CAM. Review each before adding.</p>
             </div>
             <span style={{ flexShrink: 0, padding: "0.3rem 0.8rem", borderRadius: 999, fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", background: "rgba(20,184,166,0.1)", border: "1px solid rgba(20,184,166,0.25)", color: "#14b8a6" }}>Gemini Vision</span>
           </div>
 
           <canvas ref={canvasRef} style={{ display: "none" }} />
-          <input ref={galleryInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={e => { handleGalleryPick(e.target.files?.[0]); e.target.value = ""; }} />
+          <input ref={galleryInputRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={e => { handleGalleryPick(e.target.files); e.target.value = ""; }} />
 
           <div className="dash-cols-main" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.2rem" }}>
             <div style={{ position: "relative", minHeight: 260, borderRadius: 16, border: `1.5px dashed ${isDark ? "rgba(20,184,166,0.2)" : "rgba(20,184,166,0.25)"}`, background: isDark ? "rgba(0,0,0,0.25)" : "rgba(20,184,166,0.02)", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
@@ -830,8 +991,16 @@ export default function PrototypePage() {
                 </div>
               )}
               <video ref={videoRef} style={{ width: "100%", height: "100%", objectFit: "cover", display: scannerMode === "live" ? "block" : "none" }} playsInline muted />
-              {(scannerMode === "captured" || scannerMode === "processing") && capturedImageUrl && (
+              {(scannerMode === "captured" || scannerMode === "processing" || scannerMode === "review") && capturedImageUrl && (
                 <img src={capturedImageUrl} alt="Receipt" style={{ maxHeight: 280, width: "100%", objectFit: "contain" }} />
+              )}
+              {scannerMode === "review" && activeItem?.status === "processing" && (
+                <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.7)", backdropFilter: "blur(6px)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "1rem", borderRadius: 14 }}>
+                  <div style={{ position: "relative", width: 44, height: 44 }}>
+                    <div style={{ position: "absolute", inset: 0, borderRadius: "50%", border: "2px solid rgba(20,184,166,0.2)", borderTopColor: "#14b8a6", animation: "spin 0.9s linear infinite" }} />
+                  </div>
+                  <p style={{ fontSize: "0.875rem", fontWeight: 700, color: "#fff" }}>Reading receipt…</p>
+                </div>
               )}
               {scannerMode === "processing" && (
                 <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.7)", backdropFilter: "blur(6px)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "1rem", borderRadius: 14 }}>
@@ -870,6 +1039,9 @@ export default function PrototypePage() {
                   <button type="button" onClick={captureFrame} className="dash-btn-primary" style={{ display: "inline-flex", alignItems: "center", gap: "0.45rem", padding: "0.6rem 1.1rem", borderRadius: 10, border: "none", color: "#fff", fontSize: "0.82rem", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
                     <IconCapture size={15} color="#fff" /> Capture
                   </button>
+                  <button type="button" onClick={() => { stopStream(); processQueue(queue); }} disabled={queue.length === 0} className="dash-btn-outline" style={{ display: "inline-flex", alignItems: "center", gap: "0.45rem", padding: "0.6rem 1rem", borderRadius: 10, background: "transparent", border: "1px solid rgba(20,184,166,0.35)", color: queue.length === 0 ? txMute : "#14b8a6", fontSize: "0.82rem", fontWeight: 600, cursor: queue.length === 0 ? "not-allowed" : "pointer", fontFamily: "inherit", opacity: queue.length === 0 ? 0.5 : 1 }}>
+                    <IconCheck size={15} color={queue.length === 0 ? txMute : "#14b8a6"} /> Done{queue.length > 0 ? ` (${queue.length})` : ""}
+                  </button>
                   <button type="button" onClick={resetScanner} className="dash-btn-outline" style={{ display: "inline-flex", alignItems: "center", gap: "0.45rem", padding: "0.6rem 1rem", borderRadius: 10, background: "transparent", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171", fontSize: "0.82rem", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
                 </>)}
                 {scannerMode === "captured" && (<>
@@ -882,9 +1054,21 @@ export default function PrototypePage() {
                 {scannerMode === "processing" && (
                   <button type="button" disabled style={{ padding: "0.6rem 1.1rem", borderRadius: 10, background: "rgba(20,184,166,0.2)", border: "none", color: "#14b8a6", fontSize: "0.82rem", fontWeight: 700, cursor: "not-allowed", fontFamily: "inherit" }}>Analyzing…</button>
                 )}
-                {scannerMode === "esp32-waiting" && (
+                {scannerMode === "esp32-waiting" && (<>
+                  <button type="button" onClick={() => { stopEsp32Polling(); processQueue(queue); }} disabled={queue.length === 0} className="dash-btn-outline" style={{ display: "inline-flex", alignItems: "center", gap: "0.45rem", padding: "0.6rem 1rem", borderRadius: 10, background: "transparent", border: "1px solid rgba(20,184,166,0.35)", color: queue.length === 0 ? txMute : "#14b8a6", fontSize: "0.82rem", fontWeight: 600, cursor: queue.length === 0 ? "not-allowed" : "pointer", fontFamily: "inherit", opacity: queue.length === 0 ? 0.5 : 1 }}>
+                    <IconCheck size={15} color={queue.length === 0 ? txMute : "#14b8a6"} /> Done{queue.length > 0 ? ` (${queue.length})` : ""}
+                  </button>
                   <button type="button" onClick={resetScanner} className="dash-btn-outline" style={{ display: "inline-flex", alignItems: "center", gap: "0.45rem", padding: "0.6rem 1rem", borderRadius: 10, background: "transparent", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171", fontSize: "0.82rem", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
-                )}
+                </>)}
+                {scannerMode === "review" && (<>
+                  {activeItem?.status === "error" && (
+                    <button type="button" onClick={runOCR} className="dash-btn-primary" style={{ display: "inline-flex", alignItems: "center", gap: "0.45rem", padding: "0.6rem 1.1rem", borderRadius: 10, border: "none", color: "#fff", fontSize: "0.82rem", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                      <IconScan size={15} color="#fff" /> Retry OCR
+                    </button>
+                  )}
+                  <button type="button" onClick={skipActive} className="dash-btn-outline" style={{ display: "inline-flex", alignItems: "center", gap: "0.45rem", padding: "0.6rem 1rem", borderRadius: 10, background: "transparent", border: isDark ? "1px solid rgba(255,255,255,0.1)" : "1px solid rgba(0,0,0,0.12)", color: txSub, fontSize: "0.82rem", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Skip this</button>
+                  <button type="button" onClick={resetScanner} className="dash-btn-outline" style={{ display: "inline-flex", alignItems: "center", gap: "0.45rem", padding: "0.6rem 1rem", borderRadius: 10, background: "transparent", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171", fontSize: "0.82rem", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Cancel All</button>
+                </>)}
               </div>
               {ocrError && (
                 <div style={{ padding: "0.75rem 1rem", borderRadius: 10, background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", fontSize: "0.8rem", color: "#f87171", display: "flex", gap: "0.5rem", alignItems: "flex-start" }}>
@@ -893,7 +1077,14 @@ export default function PrototypePage() {
               )}
               <div style={{ flex: 1, borderRadius: 14, background: isDark ? "rgba(255,255,255,0.025)" : "rgba(0,0,0,0.02)", border: isDark ? "1px solid rgba(255,255,255,0.06)" : "1px solid rgba(0,0,0,0.07)", padding: "1rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <p style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "#14b8a6" }}>Extracted Data</p>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                    <p style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "#14b8a6" }}>Extracted Data</p>
+                    {reviewables.length > 1 && activeReviewIndex >= 0 && (
+                      <span style={{ fontSize: "0.62rem", fontWeight: 700, padding: "0.1rem 0.45rem", borderRadius: 999, background: "rgba(99,102,241,0.12)", border: "1px solid rgba(99,102,241,0.25)", color: "#818cf8" }}>
+                        Receipt {activeReviewIndex + 1} of {reviewables.length}
+                      </span>
+                    )}
+                  </div>
                   {ocrResult && (
                     <span style={{ fontSize: "0.68rem", fontWeight: 700, padding: "0.15rem 0.5rem", borderRadius: 999, background: ocrResult.confidence >= 70 ? "rgba(20,184,166,0.1)" : "rgba(251,146,60,0.1)", color: ocrResult.confidence >= 70 ? "#14b8a6" : "#fb923c", border: `1px solid ${ocrResult.confidence >= 70 ? "rgba(20,184,166,0.3)" : "rgba(251,146,60,0.3)"}` }}>
                       {ocrResult.confidence}% match
@@ -911,11 +1102,44 @@ export default function PrototypePage() {
                 <button type="button" onClick={applyOCRToForm} disabled={!ocrResult || ocrResult.confidence === 0} className="dash-btn-primary"
                   style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "0.45rem", width: "100%", padding: "0.7rem", borderRadius: 10, border: "none", fontWeight: 700, fontSize: "0.82rem", cursor: ocrResult && ocrResult.confidence > 0 ? "pointer" : "not-allowed", fontFamily: "inherit", background: ocrResult && ocrResult.confidence > 0 ? undefined : isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.06)", color: ocrResult && ocrResult.confidence > 0 ? "#fff" : txMute, opacity: ocrResult && ocrResult.confidence > 0 ? 1 : 0.5 }}>
                   {ocrResult && ocrResult.confidence > 0 && <IconCheck size={14} color="#fff" />}
-                  {ocrResult ? "Apply to Expense Form" : "Apply to Expense Form"}
+                  {scannerMode === "review" ? "Load into Form" : "Apply to Expense Form"}
                 </button>
               </div>
             </div>
           </div>
+
+          {queue.length > 1 && (
+            <div style={{ position: "relative", marginTop: "1.2rem", paddingTop: "1.2rem", borderTop: isDark ? "1px solid rgba(255,255,255,0.06)" : "1px solid rgba(0,0,0,0.07)" }}>
+              <p style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: txMute, marginBottom: "0.7rem" }}>
+                Receipt Queue · {queue.filter(q => q.saved).length}/{queue.length} added
+              </p>
+              <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
+                {queue.map(q => {
+                  const isActive = q.id === activeQueueId;
+                  const ring = q.saved ? "#22c55e" : q.skipped ? "#64748b" : q.status === "error" ? "#f87171" : q.status === "done" ? "#14b8a6" : isDark ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.12)";
+                  return (
+                    <div key={q.id} style={{ position: "relative", width: 52, height: 52, borderRadius: 10, overflow: "hidden", flexShrink: 0, cursor: q.status === "done" && !q.saved ? "pointer" : "default", border: `2px solid ${ring}`, boxShadow: isActive ? "0 0 0 2px rgba(20,184,166,0.35)" : "none", opacity: q.skipped ? 0.45 : 1 }}
+                      onClick={() => { if (q.status === "done" && !q.saved) loadQueueItemIntoForm(q); }}
+                      title={q.saved ? "Added" : q.skipped ? "Skipped" : q.status === "error" ? (q.ocrError ?? "OCR failed") : q.status}>
+                      <img src={q.imageUrl} alt="Receipt" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.25)" }} />
+                      <div style={{ position: "absolute", bottom: 2, right: 2, width: 16, height: 16, borderRadius: "50%", background: "rgba(0,0,0,0.65)", display: "grid", placeItems: "center" }}>
+                        {q.saved ? <IconCheck size={10} color="#22c55e" />
+                          : q.status === "processing" ? <div style={{ width: 9, height: 9, borderRadius: "50%", border: "1.5px solid rgba(20,184,166,0.3)", borderTopColor: "#14b8a6", animation: "spin 0.7s linear infinite" }} />
+                          : q.status === "error" ? <IconWarning size={10} color="#f87171" />
+                          : q.status === "done" ? <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#14b8a6" }} />
+                          : <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#94a3b8" }} />}
+                      </div>
+                      {!q.saved && (
+                        <button type="button" onClick={e => { e.stopPropagation(); removeFromQueue(q.id); }}
+                          style={{ position: "absolute", top: 1, right: 1, width: 16, height: 16, borderRadius: "50%", background: "rgba(0,0,0,0.7)", border: "none", color: "#fff", fontSize: "0.7rem", lineHeight: 1, cursor: "pointer", display: "grid", placeItems: "center", padding: 0 }}>×</button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* ── Add Expense + Records ── */}
