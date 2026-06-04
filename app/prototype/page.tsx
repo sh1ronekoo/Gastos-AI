@@ -754,7 +754,6 @@ export default function PrototypePage() {
           .cat-chips-row { overflow-x: auto !important; flex-wrap: nowrap !important; padding-bottom: 4px; scrollbar-width: none; }
           .cat-chips-row::-webkit-scrollbar { display: none; }
           .rec-row-inner { padding: 0.55rem 0.65rem !important; }
-          .rec-cat-icon { display: none !important; }
           .rec-amount { font-size: 0.78rem !important; }
           .del-label { display: none !important; }
           .del-icon { display: inline !important; }
@@ -1002,7 +1001,7 @@ export default function PrototypePage() {
           </form>
 
           {/* ── Expense Records ── */}
-          <div style={{ ...glass, borderRadius: 22, padding: "1.6rem", display: "flex", flexDirection: "column", gap: "1rem", maxHeight: "75vh", overflow: "hidden" }}>
+          <div style={{ ...glass, borderRadius: 22, padding: "1.6rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
             <div style={{ display: "flex", flexWrap: "wrap", alignItems: "flex-start", justifyContent: "space-between", gap: "0.75rem" }}>
               <div>
                 <h2 style={{ fontSize: "1.05rem", fontWeight: 700, color: tx, margin: 0 }}>Expense Records</h2>
@@ -1036,16 +1035,16 @@ export default function PrototypePage() {
               })}
             </div>
 
-            <div className="scroll-list" style={{ display: "flex", flexDirection: "column", gap: "0.4rem", flex: 1, minHeight: 0, overflowY: "auto", paddingRight: "0.25rem" }}>
+            <div className="scroll-list" style={{ display: "flex", flexDirection: "column", gap: "0.4rem", maxHeight: "clamp(260px, 45vh, 520px)", overflowY: "auto", paddingRight: "0.25rem" }}>
               {filteredExpenses.map(item => {
                 const CatIcon = CATEGORY_ICON_COMPONENTS[item.category];
                 const itemSource = item.categorization_source ?? null;
 
                 return (
-                  <div key={item.id} className="expense-row" style={{ border: isDark ? "1px solid rgba(255,255,255,0.05)" : "1px solid rgba(0,0,0,0.07)", overflow: "hidden" }}>
+                  <div key={item.id} className="expense-row" style={{ border: isDark ? "1px solid rgba(255,255,255,0.05)" : "1px solid rgba(0,0,0,0.07)", overflow: "hidden", flexShrink: 0 }}>
                     <div className="rec-row-inner" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.8rem 1rem" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", minWidth: 0 }}>
-                        <div className="rec-cat-icon" style={{ width: 36, height: 36, borderRadius: 10, background: `${CATEGORY_COLORS[item.category]}18`, border: `1px solid ${CATEGORY_COLORS[item.category]}30`, display: "grid", placeItems: "center", flexShrink: 0 }}>
+                        <div style={{ width: 36, height: 36, borderRadius: 10, background: `${CATEGORY_COLORS[item.category]}18`, border: `1px solid ${CATEGORY_COLORS[item.category]}30`, display: "grid", placeItems: "center", flexShrink: 0 }}>
                           <CatIcon size={16} color={CATEGORY_COLORS[item.category]} />
                         </div>
                         <div style={{ minWidth: 0 }}>
