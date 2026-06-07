@@ -4,20 +4,28 @@
  * POST { title: string, merchantName?: string }
  * → { category, confidence, source: "ml" }
  *
- * Primary: Random Forest via FastAPI (real ML)
- * Fallback: TS keyword classifier (if RF unreachable)
+ * Tier 1 (optional): Random Forest via FastAPI — only used when RF_SERVICE_URL is set
+ * Tier 2: TS keyword classifier (instant, no network)
+ * Tier 3: Gemini API — used when keyword confidence < threshold
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { classify, type ExpenseCategory } from "@/lib/ml-categorizer";
+import { GoogleGenerativeAI } from "@google/generative-ai";
+import { classify, ML_THRESHOLD, type ExpenseCategory } from "@/lib/ml-categorizer";
 
 const VALID_CATEGORIES: ExpenseCategory[] = [
   "Food", "Transport", "Utilities", "Shopping", "Health", "Other",
 ];
 
-const RF_SERVICE_URL = process.env.RF_SERVICE_URL ?? "http://localhost:8000";
+const RF_SERVICE_URL = process.env.RF_SERVICE_URL;          // undefined → skip RF
 const RF_API_KEY     = process.env.RF_API_KEY ?? "";
 const RF_TIMEOUT_MS  = Number(process.env.RF_TIMEOUT_MS ?? "8000");
+
+const GEMINI_MODELS = [
+  "models/gemini-3.1-flash-lite",
+  "models/gemini-3.0-flash",
+  "models/gemini-2.5-flash",
+];
 
 export async function POST(req: NextRequest) {
   try {
@@ -32,25 +40,37 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // ── Primary: Random Forest ───────────────────────────────────────────────
-    const rfResult = await callRFService(title, merchantName);
+    // ── Tier 1: Random Forest (only when RF_SERVICE_URL is explicitly set) ───
+    if (RF_SERVICE_URL) {
+      const rfResult = await callRFService(title, merchantName);
+      if (rfResult) {
+        return NextResponse.json({
+          category:   rfResult.category,
+          confidence: rfResult.confidence,
+          source:     "ml" as const,
+          allScores:  rfResult.allScores,
+        });
+      }
+    }
 
-    if (rfResult) {
+    // ── Tier 2: TS keyword classifier ───────────────────────────────────────
+    const tsResult = classify(title, merchantName);
+    if (tsResult.confidence >= ML_THRESHOLD) {
       return NextResponse.json({
-        category:   rfResult.category,
-        confidence: rfResult.confidence,
+        category:   tsResult.category,
+        confidence: tsResult.confidence,
         source:     "ml" as const,
-        allScores:  rfResult.allScores,
+        allScores:  tsResult.allScores,
       });
     }
 
-    // ── Fallback: TS keyword classifier (RF unreachable) ────────────────────
-    const rulesResult = classify(title, merchantName);
+    // ── Tier 3: Gemini (low-confidence fallback) ─────────────────────────────
+    const geminiCategory = await classifyWithGemini(title, merchantName);
     return NextResponse.json({
-      category:   rulesResult.category,
-      confidence: rulesResult.confidence,
+      category:   geminiCategory,
+      confidence: 0.85,
       source:     "ml" as const,
-      allScores:  rulesResult.allScores,
+      allScores:  null,
     });
 
   } catch (err) {
@@ -97,4 +117,39 @@ async function callRFService(
   } catch {
     return null;
   }
+}
+
+async function classifyWithGemini(
+  title: string,
+  merchantName: string
+): Promise<ExpenseCategory> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) return "Other";
+
+  const prompt = `Classify this Philippine expense into exactly one category.
+Title: "${title}"${merchantName ? `\nMerchant: "${merchantName}"` : ""}
+Categories: Food, Transport, Utilities, Shopping, Health, Other
+Reply with only the category name, nothing else.`;
+
+  const genAI = new GoogleGenerativeAI(apiKey);
+
+  for (const modelName of GEMINI_MODELS) {
+    try {
+      const model  = genAI.getGenerativeModel({ model: modelName });
+      const result = await model.generateContent(prompt);
+      const text   = result.response.text().trim();
+
+      const matched = VALID_CATEGORIES.find(
+        (c) => c.toLowerCase() === text.toLowerCase()
+      ) as ExpenseCategory | undefined;
+
+      if (matched) return matched;
+    } catch (err: unknown) {
+      const status = (err as { status?: number })?.status;
+      if (status === 503 || status === 429) continue;
+      break;
+    }
+  }
+
+  return "Other";
 }

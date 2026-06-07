@@ -82,7 +82,7 @@ const FEATURES: Record<ExpenseCategory, FeatureEntry[]> = {
     // ── Car maintenance ──
     ["car wash", 1.0], ["carwash", 1.0], ["oil change", 1.0],
     ["tire", 0.85], ["vulcanizing", 1.0], ["lto", 0.9],
-    ["registration", 0.65], ["fare", 0.9], ["load", 0.4],
+    ["registration", 0.65], ["fare", 0.9],
     ["transport", 0.9], ["commute", 0.9], ["ride", 0.7],
     // ── Airlines ──
     ["cebu pacific", 1.0], ["philippine airlines", 1.0], ["pal", 0.7],
@@ -91,8 +91,8 @@ const FEATURES: Record<ExpenseCategory, FeatureEntry[]> = {
 
   Utilities: [
     // ── Power ──
-    ["meralco", 1.0], ["electric", 0.9], ["electricity", 0.95],
-    ["power bill", 1.0], ["luz", 0.85],
+    ["meralco", 1.0], ["davao light", 1.0], ["electric", 0.9], ["electricity", 0.95],
+    ["power bill", 1.0], ["luz", 0.85], ["kuryente", 1.0],
     // ── Water ──
     ["maynilad", 1.0], ["manila water", 1.0], ["water bill", 1.0],
     ["tubig", 0.95],
@@ -101,7 +101,10 @@ const FEATURES: Record<ExpenseCategory, FeatureEntry[]> = {
     ["dito", 0.9], ["converge", 1.0], ["skycable", 1.0], ["sky broadband", 1.0],
     ["prepaid", 0.6], ["postpaid", 0.8],
     ["internet", 0.85], ["broadband", 0.9], ["wifi", 0.8],
-    ["mobile data", 0.9], ["load", 0.45],
+    ["mobile data", 0.9], ["mobile load", 1.0], ["load", 0.45],
+    // ── Streaming / SaaS subscriptions ──
+    ["netflix", 1.0], ["spotify", 1.0], ["youtube premium", 0.9], ["disney+", 0.9],
+    ["canva", 1.0],
     // ── Gas / LPG ──
     ["lpg", 1.0], ["gas bill", 1.0], ["solane", 1.0], ["gasul", 1.0],
     ["cooking gas", 1.0], ["petrolane", 1.0],
@@ -119,7 +122,7 @@ const FEATURES: Record<ExpenseCategory, FeatureEntry[]> = {
     ["sm", 0.65], ["sm department", 0.9], ["sm store", 0.9],
     ["robinsons", 0.7], ["ayala", 0.65], ["landmark", 0.85],
     ["sm mall", 0.9], ["the sm store", 1.0],
-    ["watsons", 0.8], ["rose pharmacy", 0.7],  // toiletries
+    ["watsons", 1.0], ["rose pharmacy", 0.7],
     ["ace hardware", 1.0], ["handyman", 1.0],
     // ── Clothing / fashion ──
     ["bench", 0.8], ["penshoppe", 0.95], ["h&m", 0.9], ["uniqlo", 0.9],
@@ -137,7 +140,7 @@ const FEATURES: Record<ExpenseCategory, FeatureEntry[]> = {
 
   Health: [
     // ── Pharmacies ──
-    ["mercury drug", 1.0], ["watsons", 0.75], ["generika", 1.0],
+    ["mercury drug", 1.0], ["generika", 1.0],
     ["rose pharmacy", 0.8], ["southstar drug", 1.0], ["the generics pharmacy", 1.0],
     ["pharmacy", 1.0], ["drug store", 1.0], ["botika", 1.0],
     // ── Medical ──
@@ -162,8 +165,8 @@ const FEATURES: Record<ExpenseCategory, FeatureEntry[]> = {
 
   Other: [
     // ── Entertainment ──
-    ["netflix", 0.8], ["spotify", 0.8], ["youtube premium", 0.8],
-    ["disney", 0.8], ["game", 0.75], ["gaming", 0.8], ["valorant", 0.9],
+    ["youtube premium", 0.8], ["disney", 0.8],
+    ["game", 0.75], ["gaming", 0.8], ["valorant", 0.9],
     ["mobile legends", 0.9], ["steam", 0.85], ["playstation", 0.85],
     ["cinema", 0.85], ["movie", 0.8], ["sm cinema", 0.9],
     // ── Remittance / transfer ──
