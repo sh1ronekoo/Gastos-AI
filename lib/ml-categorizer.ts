@@ -61,6 +61,19 @@ const FEATURES: Record<ExpenseCategory, FeatureEntry[]> = {
     ["milk", 0.7], ["bread", 0.75], ["boba", 0.85], ["shawarma", 0.9],
     ["sisig", 0.9], ["sinigang", 0.9], ["adobo", 0.9], ["pizza", 0.85],
     ["burger", 0.85], ["hotdog", 0.85], ["soda", 0.7], ["juice", 0.7],
+    // ── Milk tea brands ──
+    ["gong cha", 1.0], ["chatime", 1.0], ["tiger sugar", 1.0],
+    ["macao imperial", 1.0], ["coco fresh", 0.9],
+    // ── Bakeries / cafes ──
+    ["goldilocks", 1.0], ["julies bakeshop", 1.0], ["julie's bakeshop", 1.0],
+    ["pan de sal", 0.85], ["mary grace", 0.95], ["figaro", 0.9],
+    ["tropical hut", 0.95], ["potato corner", 1.0], ["angel's burger", 0.95],
+    // ── Filipino street food ──
+    ["fishball", 0.9], ["isaw", 0.95], ["kwek kwek", 1.0], ["balut", 0.9],
+    ["taho", 0.9], ["halo halo", 0.9], ["lechon", 0.9], ["bulalo", 0.9],
+    ["kare kare", 0.9], ["barbecue", 0.8],
+    // ── More groceries ──
+    ["waltermart", 0.9], ["s&r", 0.9], ["family mart", 0.9],
   ],
 
   Transport: [
@@ -87,6 +100,11 @@ const FEATURES: Record<ExpenseCategory, FeatureEntry[]> = {
     // ── Airlines ──
     ["cebu pacific", 1.0], ["philippine airlines", 1.0], ["pal", 0.7],
     ["airasia", 1.0], ["flight", 0.9], ["ticket", 0.6],
+    // ── More transport ──
+    ["taxi", 0.9], ["pedicab", 0.95], ["ferry", 0.9], ["boat fare", 0.9],
+    ["roro", 0.9], ["2go", 0.9], ["supercat", 1.0], ["oceanjet", 1.0],
+    ["tnvs", 0.95], ["car rental", 0.9], ["seaoil", 1.0], ["unioil", 1.0],
+    ["skyway", 1.0],
   ],
 
   Utilities: [
@@ -112,6 +130,12 @@ const FEATURES: Record<ExpenseCategory, FeatureEntry[]> = {
     ["bill", 0.7], ["utility", 0.95], ["subscription", 0.55],
     ["monthly dues", 0.9], ["association dues", 1.0], ["hoa", 0.9],
     ["condo dues", 0.95], ["rent", 0.8], ["cable", 0.8],
+    // ── More subscriptions ──
+    ["apple music", 1.0], ["icloud", 0.9], ["google one", 0.9],
+    ["microsoft 365", 1.0], ["adobe", 0.85], ["zoom", 0.85],
+    // ── More bills ──
+    ["dorm fee", 0.95], ["dormitory", 0.9], ["room rental", 0.85],
+    ["landline", 0.9], ["water district", 0.9],
   ],
 
   Shopping: [
@@ -136,6 +160,18 @@ const FEATURES: Record<ExpenseCategory, FeatureEntry[]> = {
     ["purchase", 0.6], ["bought", 0.6], ["order", 0.5], ["shopping", 0.9],
     ["mall", 0.75], ["store", 0.65], ["shop", 0.7],
     ["pasalubong", 0.85], ["bilhin", 0.8],
+    // ── Hardware / appliances ──
+    ["wilcon", 1.0], ["true value", 1.0], ["abenson", 1.0],
+    ["ansons", 1.0], ["anson's", 1.0],
+    // ── Electronics stores ──
+    ["cdrkng", 1.0], ["cd r king", 1.0], ["octagon", 0.9], ["istore", 1.0],
+    // ── Brands ──
+    ["nike", 1.0], ["adidas", 1.0], ["new balance", 1.0], ["converse", 1.0],
+    ["forever 21", 1.0], ["cotton on", 1.0], ["bershka", 1.0],
+    ["ukay", 0.9], ["tiangge", 0.85],
+    // ── Cosmetics / lifestyle ──
+    ["perfume", 0.85], ["cosmetics", 0.9], ["makeup", 0.85],
+    ["national bookstore", 1.0], ["nbs", 0.75], ["divisoria", 0.9],
   ],
 
   Health: [
@@ -161,6 +197,29 @@ const FEATURES: Record<ExpenseCategory, FeatureEntry[]> = {
     ["haircut", 0.75], ["salon", 0.7], ["spa", 0.75], ["massage", 0.8],
     ["health", 0.8], ["medical", 0.9], ["insurance", 0.75],
     ["philhealth", 1.0], ["sss", 0.6], ["hmo", 1.0],
+    // ── Specialists ──
+    ["pediatrician", 1.0], ["pedia", 0.9], ["ob gyne", 1.0],
+    ["obstetrician", 1.0], ["ophthalmologist", 1.0], ["eye clinic", 1.0],
+    ["orthodontist", 1.0], ["braces", 0.85], ["root canal", 1.0],
+    ["prophylaxis", 1.0], ["tooth cleaning", 1.0],
+    // ── Tests ──
+    ["medical certificate", 1.0], ["covid test", 1.0], ["antigen test", 1.0],
+    ["swab test", 1.0], ["pcr test", 1.0], ["rapid test", 0.9],
+    ["drug test", 0.9], ["urine test", 0.9],
+    // ── Therapy ──
+    ["physical therapy", 1.0], ["rehabilitation", 0.9], ["chiropractor", 1.0],
+    ["chiropractic", 1.0], ["acupuncture", 1.0],
+    // ── Pharmacy brands ──
+    ["medgrocer", 1.0], ["ritemed", 1.0],
+    ["maxicare", 1.0], ["intellicare", 1.0], ["medicard", 1.0],
+    // ── Aesthetic / skin ──
+    ["dermatologist", 1.0], ["skin care", 0.85], ["skincare", 0.85],
+    ["botox", 1.0], ["aesthetic", 0.85], ["facial", 0.85],
+    ["manicure", 0.9], ["pedicure", 0.9], ["nail salon", 1.0],
+    // ── More fitness ──
+    ["crossfit", 1.0], ["muay thai", 1.0], ["martial arts", 0.85],
+    // ── Contributions ──
+    ["pagibig", 1.0],
   ],
 
   Other: [
@@ -183,6 +242,22 @@ const FEATURES: Record<ExpenseCategory, FeatureEntry[]> = {
     ["celebration", 0.75], ["birthday", 0.75], ["party", 0.7],
     ["event", 0.65], ["miscellaneous", 1.0], ["misc", 0.9],
     ["other", 0.9], ["iba pa", 0.9],
+    // ── Gaming top-ups ──
+    ["codashop", 1.0], ["genshin", 1.0], ["free fire", 1.0],
+    ["roblox", 1.0], ["xbox", 0.9], ["nintendo", 0.9],
+    // ── Gaming venues ──
+    ["mineski", 1.0], ["net cafe", 0.95], ["internet cafe", 0.95],
+    // ── Fandom / events ──
+    ["kpop", 0.9], ["concert ticket", 0.9],
+    // ── Remittance ──
+    ["western union", 1.0], ["cebuana", 1.0], ["bayad center", 0.9],
+    // ── Pets ──
+    ["pet food", 0.9], ["pet shop", 0.85], ["veterinary", 1.0],
+    ["vet clinic", 1.0], ["pet grooming", 1.0],
+    // ── Home ──
+    ["renovation", 0.85], ["house repair", 0.9],
+    // ── Recreation ──
+    ["bowling", 0.85], ["billiards", 0.85],
   ],
 };
 
