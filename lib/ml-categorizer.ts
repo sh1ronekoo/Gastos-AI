@@ -74,7 +74,7 @@ const FEATURES: Record<ExpenseCategory, FeatureEntry[]> = {
     ["pnr", 1.0], ["train", 0.8],
     // ── Fuel & parking ──
     ["gas", 0.85], ["gasoline", 0.95], ["diesel", 0.95], ["petrol", 0.9],
-    ["fuel", 0.9], ["shell", 0.8], ["caltex", 0.95], ["petron", 1.0],
+    ["fuel", 0.9], ["shell", 1.0], ["caltex", 1.0], ["petron", 1.0], ["maxim", 1.0],
     ["phoenix fuel", 1.0], ["total gas", 0.9],
     ["parking", 1.0], ["toll", 1.0], ["expressway", 1.0],
     ["slex", 1.0], ["nlex", 1.0], ["sctex", 1.0], ["tplex", 1.0],
