@@ -12,7 +12,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { classify, ML_THRESHOLD, type ExpenseCategory } from "@/lib/ml-categorizer";
-import lookup from "@/lib/expense-lookup.json";
+import lookup from "@/lib/expense-lookup";
 
 const VALID_CATEGORIES: ExpenseCategory[] = [
   "Food", "Transport", "Utilities", "Shopping", "Health", "Other",
