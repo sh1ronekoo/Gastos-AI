@@ -83,7 +83,7 @@ const FEATURES: Record<ExpenseCategory, FeatureEntry[]> = {
     ["car wash", 1.0], ["carwash", 1.0], ["oil change", 1.0],
     ["tire", 0.85], ["vulcanizing", 1.0], ["lto", 0.9],
     ["registration", 0.65], ["fare", 0.9],
-    ["transport", 0.9], ["commute", 0.9], ["ride", 0.7],
+    ["transport", 0.9], ["commute", 0.9], ["ride", 1.0], ["ride it", 1.0],
     // ── Airlines ──
     ["cebu pacific", 1.0], ["philippine airlines", 1.0], ["pal", 0.7],
     ["airasia", 1.0], ["flight", 0.9], ["ticket", 0.6],
