@@ -17,6 +17,22 @@ type OCRResult = {
   category: ExpenseCategory | null; items: string[]; raw_text: string | null; confidence: number;
 };
 
+type QueueItemStatus = "pending" | "processing" | "done" | "error";
+type QueuedReceipt = {
+  id: string;
+  imageUrl: string;
+  base64: string;
+  mime: string;
+  blob: Blob | null;
+  ocrResult: OCRResult | null;
+  ocrError: string | null;
+  receiptUrl?: string | null;
+  status: QueueItemStatus;
+  source: "live" | "gallery" | "esp32";
+  saved: boolean;
+  skipped: boolean;
+};
+
 type CategorizationState =
   | { status: "idle" }
   | { status: "loading" }
@@ -29,6 +45,14 @@ const pesoFormatter = new Intl.NumberFormat("en-PH", { style: "currency", curren
 const CATEGORY_COLORS: Record<ExpenseCategory, string> = {
   Food: "#14b8a6", Transport: "#6366f1", Utilities: "#fb923c",
   Shopping: "#ec4899", Health: "#22c55e", Other: "#64748b",
+};
+
+type IncomeCategory = "Salary" | "Business" | "Freelance" | "Allowance" | "Investment" | "Other";
+type Income = { id: string; category: IncomeCategory; amount: number; month: string; created_at?: string };
+const incomeCategories: IncomeCategory[] = ["Salary", "Business", "Freelance", "Allowance", "Investment", "Other"];
+const INCOME_CATEGORY_COLORS: Record<IncomeCategory, string> = {
+  Salary: "#14b8a6", Business: "#6366f1", Freelance: "#fb923c",
+  Allowance: "#ec4899", Investment: "#22c55e", Other: "#64748b",
 };
 
 // ── SVG icon components ──────────────────────────────────────
@@ -159,6 +183,18 @@ function IconReceipt({ size = 18, color = "currentColor" }: { size?: number; col
     </svg>
   );
 }
+function IconESP32({ size = 18, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="6" width="20" height="12" rx="2" />
+      <line x1="6" y1="2" x2="6" y2="6" /><line x1="10" y1="2" x2="10" y2="6" />
+      <line x1="14" y1="2" x2="14" y2="6" /><line x1="18" y1="2" x2="18" y2="6" />
+      <line x1="6" y1="18" x2="6" y2="22" /><line x1="10" y1="18" x2="10" y2="22" />
+      <line x1="14" y1="18" x2="14" y2="22" /><line x1="18" y1="18" x2="18" y2="22" />
+      <circle cx="12" cy="12" r="2" />
+    </svg>
+  );
+}
 function IconSearch({ size = 16, color = "currentColor" }: { size?: number; color?: string }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -186,6 +222,50 @@ function IconBrain({ size = 12, color = "currentColor" }: { size?: number; color
 const CATEGORY_ICON_COMPONENTS: Record<ExpenseCategory, React.FC<{ size?: number; color?: string }>> = {
   Food: IconFood, Transport: IconTransport, Utilities: IconUtilities,
   Shopping: IconShopping, Health: IconHealth, Other: IconOther,
+};
+
+// ── Income category icons ────────────────────────────────────
+function IconSalary({ size = 18, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="6" width="20" height="12" rx="2" /><circle cx="12" cy="12" r="3" />
+      <line x1="6" y1="12" x2="6.01" y2="12" /><line x1="18" y1="12" x2="18.01" y2="12" />
+    </svg>
+  );
+}
+function IconBusiness({ size = 18, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="7" width="20" height="14" rx="2" /><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" />
+    </svg>
+  );
+}
+function IconFreelance({ size = 18, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="4" width="20" height="13" rx="2" /><line x1="2" y1="20" x2="22" y2="20" />
+    </svg>
+  );
+}
+function IconAllowance({ size = 18, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="20 12 20 22 4 22 4 12" /><rect x="2" y="7" width="20" height="5" />
+      <line x1="12" y1="22" x2="12" y2="7" /><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z" /><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z" />
+    </svg>
+  );
+}
+function IconInvestment({ size = 18, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="23 6 13.5 15.5 8.5 10.5 1 18" /><polyline points="17 6 23 6 23 12" />
+    </svg>
+  );
+}
+
+const INCOME_CATEGORY_ICON_COMPONENTS: Record<IncomeCategory, React.FC<{ size?: number; color?: string }>> = {
+  Salary: IconSalary, Business: IconBusiness, Freelance: IconFreelance,
+  Allowance: IconAllowance, Investment: IconInvestment, Other: IconOther,
 };
 
 // ── Source badge ─────────────────────────────────────────────
@@ -244,7 +324,10 @@ export default function PrototypePage() {
   const [amount, setAmount] = useState("");
   const [merchantName, setMerchantName] = useState("");
   const [notes, setNotes] = useState("");
-  const [monthlyBudget, setMonthlyBudget] = useState("10000");
+  const [incomes, setIncomes] = useState<Income[]>([]);
+  const [incomeCategory, setIncomeCategory] = useState<IncomeCategory>("Salary");
+  const [incomeAmount, setIncomeAmount] = useState("");
+  const [incomeError, setIncomeError] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<ExpenseCategory | "All">("All");
   const [searchTerm, setSearchTerm] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -262,13 +345,19 @@ export default function PrototypePage() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
-  const [scannerMode, setScannerMode] = useState<"idle" | "live" | "captured" | "processing">("idle");
+  const [scannerMode, setScannerMode] = useState<"idle" | "live" | "captured" | "processing" | "esp32-waiting" | "review">("idle");
+  const esp32PollRef    = useRef<ReturnType<typeof setInterval> | null>(null);
+  const esp32TimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [capturedImageUrl, setCapturedImageUrl] = useState<string | null>(null);
   const [capturedBase64, setCapturedBase64] = useState<string | null>(null);
   const [capturedMime, setCapturedMime] = useState("image/jpeg");
   const [capturedBlob, setCapturedBlob] = useState<Blob | null>(null);
   const [ocrResult, setOcrResult] = useState<OCRResult | null>(null);
   const [ocrError, setOcrError] = useState<string | null>(null);
+  const [queue, setQueue] = useState<QueuedReceipt[]>([]);
+  const [activeQueueId, setActiveQueueId] = useState<string | null>(null);
+  const esp32SeenIds = useRef<Set<string>>(new Set());
+  const queueRef = useRef<QueuedReceipt[]>([]);
   const [isAutoCategorized, setIsAutoCategorized] = useState(false);
   const [pendingReceiptUrl, setPendingReceiptUrl] = useState<string | null>(null);
   const [pendingRawOcr, setPendingRawOcr] = useState<string | null>(null);
@@ -279,14 +368,18 @@ export default function PrototypePage() {
       const { data: expensesData } = await supabase.from("expenses").select("*").order("created_at", { ascending: false });
       if (expensesData) setExpenses(expensesData);
       const month = new Date().toISOString().slice(0, 7);
-      const { data: budgetData } = await supabase.from("budgets").select("*").eq("month", month).single();
-      if (budgetData) setMonthlyBudget(String(budgetData.monthly_budget));
+      const { data: incomeData } = await supabase.from("incomes").select("*").eq("month", month).order("created_at", { ascending: false });
+      if (incomeData) {
+        setIncomes(incomeData);
+        // Keep the budgets table aligned with the income total so Chat/Insights match the dashboard.
+        syncBudget(incomeData);
+      }
       setLoadingData(false);
     };
     init();
   }, []);
 
-  useEffect(() => { return () => stopStream(); }, []);
+  useEffect(() => { return () => { stopStream(); stopEsp32Polling(); }; }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -296,6 +389,23 @@ export default function PrototypePage() {
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
+
+  useEffect(() => { queueRef.current = queue; }, [queue]);
+
+  const activeItem = useMemo(() => queue.find(q => q.id === activeQueueId) ?? null, [queue, activeQueueId]);
+  const reviewables = useMemo(() => queue.filter(q => !q.skipped), [queue]);
+  const activeReviewIndex = useMemo(() => reviewables.findIndex(q => q.id === activeQueueId), [reviewables, activeQueueId]);
+
+  // Mirror the active queue item into the legacy preview/extracted-data state.
+  useEffect(() => {
+    if (!activeItem) return;
+    setCapturedImageUrl(activeItem.imageUrl);
+    setCapturedBase64(activeItem.base64);
+    setCapturedMime(activeItem.mime);
+    setCapturedBlob(activeItem.blob);
+    setOcrResult(activeItem.ocrResult);
+    setOcrError(activeItem.ocrError);
+  }, [activeItem]);
 
   const triggerCategorization = useCallback((newTitle: string, newMerchant: string) => {
     if (userOverrideRef.current) return;
@@ -351,9 +461,79 @@ export default function PrototypePage() {
 
   function stopStream() { streamRef.current?.getTracks().forEach(t => t.stop()); streamRef.current = null; }
 
+  function stopEsp32Polling() {
+    if (esp32PollRef.current)    clearInterval(esp32PollRef.current);
+    if (esp32TimeoutRef.current) clearTimeout(esp32TimeoutRef.current);
+    esp32PollRef.current    = null;
+    esp32TimeoutRef.current = null;
+  }
+
+  // ── Queue helpers ────────────────────────────────────────────
+  function base64ToBlob(base64: string, mime: string): Blob {
+    const byteChars = atob(base64);
+    const byteArr   = new Uint8Array(byteChars.length);
+    for (let i = 0; i < byteChars.length; i++) byteArr[i] = byteChars.charCodeAt(i);
+    return new Blob([byteArr], { type: mime });
+  }
+
+  function makeQueued(args: {
+    imageUrl: string; base64: string; mime: string; blob: Blob | null;
+    ocrResult?: OCRResult | null; source: QueuedReceipt["source"];
+  }): QueuedReceipt {
+    const uid = typeof crypto !== "undefined" && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    return {
+      id: uid, imageUrl: args.imageUrl, base64: args.base64, mime: args.mime,
+      blob: args.blob, ocrResult: args.ocrResult ?? null, ocrError: null,
+      receiptUrl: null, status: args.ocrResult ? "done" : "pending",
+      source: args.source, saved: false, skipped: false,
+    };
+  }
+
+  function startEsp32Mode() {
+    stopStream();
+    setOcrResult(null); setOcrError(null);
+    setCapturedImageUrl(null); setCapturedBase64(null); setCapturedBlob(null);
+    setQueue([]); setActiveQueueId(null); esp32SeenIds.current.clear();
+    setScannerMode("esp32-waiting");
+
+    const armTimeout = () => {
+      if (esp32TimeoutRef.current) clearTimeout(esp32TimeoutRef.current);
+      esp32TimeoutRef.current = setTimeout(() => {
+        stopEsp32Polling();
+        const current = queueRef.current;
+        if (current.length > 0) { processQueue(current); }
+        else { setScannerMode("idle"); setOcrError("ESP32-CAM timed out. No capture received in 60 seconds."); }
+      }, 60_000);
+    };
+    armTimeout();
+
+    esp32PollRef.current = setInterval(async () => {
+      try {
+        const res  = await fetch("/api/esp32-poll");
+        const data = await res.json();
+        if (data.status !== "ready") return;
+        if (data.id && esp32SeenIds.current.has(data.id)) return;
+        if (data.id) esp32SeenIds.current.add(data.id);
+
+        const mime    = data.mimeType ?? "image/jpeg";
+        const dataUrl = `data:${mime};base64,${data.imageBase64}`;
+        const item = makeQueued({
+          imageUrl: dataUrl, base64: data.imageBase64, mime,
+          blob: base64ToBlob(data.imageBase64, mime),
+          ocrResult: data.ocrResult ?? null, source: "esp32",
+        });
+        setQueue(prev => [...prev, item]);
+        armTimeout(); // got a capture → reset idle timer
+      } catch { /* silently retry until timeout */ }
+    }, 2_000);
+  }
+
   async function startLiveCamera() {
     setOcrResult(null); setOcrError(null);
     setCapturedImageUrl(null); setCapturedBase64(null); setCapturedBlob(null);
+    if (scannerMode === "idle") { setQueue([]); setActiveQueueId(null); }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } } });
       streamRef.current = stream;
@@ -368,26 +548,37 @@ export default function PrototypePage() {
     canvas.width = video.videoWidth; canvas.height = video.videoHeight;
     canvas.getContext("2d")?.drawImage(video, 0, 0);
     const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
-    stopStream(); setCapturedImageUrl(dataUrl); setCapturedBase64(dataUrl.split(",")[1]); setCapturedMime("image/jpeg");
-    canvas.toBlob(blob => { if (blob) setCapturedBlob(blob); }, "image/jpeg", 0.92);
-    setScannerMode("captured");
+    const base64  = dataUrl.split(",")[1];
+    canvas.toBlob(blob => {
+      const item = makeQueued({ imageUrl: dataUrl, base64, mime: "image/jpeg", blob: blob ?? base64ToBlob(base64, "image/jpeg"), source: "live" });
+      setQueue(prev => [...prev, item]);
+    }, "image/jpeg", 0.92);
+    // stay in "live" so the user can snap another shot
   }
 
-  function handleGalleryPick(file: File | undefined) {
-    if (!file || !file.type.startsWith("image/")) return;
-    stopStream(); setOcrResult(null); setOcrError(null); setCapturedBlob(file);
-    const reader = new FileReader();
-    reader.onload = e => {
-      const dataUrl = e.target?.result as string;
-      setCapturedImageUrl(dataUrl); setCapturedBase64(dataUrl.split(",")[1]); setCapturedMime(file.type); setScannerMode("captured");
-    };
-    reader.readAsDataURL(file);
+  function handleGalleryPick(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    stopStream(); setOcrError(null);
+    setQueue([]); setActiveQueueId(null);
+    const images = Array.from(files).filter(f => f.type.startsWith("image/"));
+    if (images.length === 0) return;
+
+    Promise.all(images.map(file => new Promise<QueuedReceipt>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = e => {
+        const dataUrl = e.target?.result as string;
+        resolve(makeQueued({ imageUrl: dataUrl, base64: dataUrl.split(",")[1], mime: file.type, blob: file, source: "gallery" }));
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    }))).then(items => { setQueue(items); processQueue(items); })
+      .catch(() => setOcrError("Failed to read one or more images."));
   }
 
   async function uploadReceiptImage(blob: Blob, mime: string): Promise<string | null> {
     try {
       const ext = mime === "image/png" ? "png" : "jpg";
-      const fileName = `receipt_${Date.now()}.${ext}`;
+      const fileName = `receipt_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
       const { data, error } = await supabase.storage.from("receipts").upload(fileName, blob, { contentType: mime, upsert: false });
       if (error || !data) return null;
       const { data: urlData } = supabase.storage.from("receipts").getPublicUrl(data.path);
@@ -395,51 +586,73 @@ export default function PrototypePage() {
     } catch { return null; }
   }
 
-  async function runOCR() {
-    if (!capturedBase64) return;
-    setScannerMode("processing"); setOcrError(null);
-    try {
-      const res = await fetch("/api/ocr", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image: capturedBase64, mimeType: capturedMime }) });
-      const data = await res.json();
-      if (data.error) { setOcrError(data.error); setScannerMode("captured"); return; }
-      setOcrResult(data); setScannerMode("captured");
-    } catch { setOcrError("Failed to process receipt. Please try again."); setScannerMode("captured"); }
+  // OCR every pending item, then load the first reviewable into the form.
+  async function processQueue(items: QueuedReceipt[]) {
+    setScannerMode("review");
+    const working = items.map(i => ({ ...i }));
+
+    for (const item of working) {
+      if (item.status !== "pending") continue;
+      item.status = "processing";
+      setQueue(prev => prev.map(x => x.id === item.id ? { ...x, status: "processing" } : x));
+      try {
+        const res = await fetch("/api/ocr", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image: item.base64, mimeType: item.mime }) });
+        const data = await res.json();
+        if (data.error) {
+          item.status = "error"; item.ocrError = data.error;
+        } else {
+          item.status = "done"; item.ocrResult = data; item.ocrError = null;
+        }
+      } catch {
+        item.status = "error"; item.ocrError = "Failed to process receipt.";
+      }
+      setQueue(prev => prev.map(x => x.id === item.id ? { ...x, status: item.status, ocrResult: item.ocrResult, ocrError: item.ocrError } : x));
+    }
+
+    const first = working.find(q => q.status === "done" && !q.saved && !q.skipped);
+    if (first) loadQueueItemIntoForm(first);
+    else {
+      const firstErr = working.find(q => !q.saved && !q.skipped);
+      if (firstErr) setActiveQueueId(firstErr.id); // show the error item
+    }
   }
 
-  async function applyOCRToForm() {
-    if (!ocrResult) return;
+  // Upload the receipt image (once) and fill the expense form from an item's OCR result.
+  async function loadQueueItemIntoForm(item: QueuedReceipt) {
+    setActiveQueueId(item.id);
+    if (!item.ocrResult) return; // error item — leave form untouched
 
-    let receiptUrl: string | null = null;
-    if (capturedBlob) receiptUrl = await uploadReceiptImage(capturedBlob, capturedMime);
+    let receiptUrl = item.receiptUrl ?? null;
+    if (!receiptUrl && item.blob) {
+      receiptUrl = await uploadReceiptImage(item.blob, item.mime);
+      setQueue(prev => prev.map(x => x.id === item.id ? { ...x, receiptUrl } : x));
+    }
 
-    const extractedTitle    = ocrResult.merchant ?? "";
-    const extractedMerchant = ocrResult.merchant ?? "";
+    const ocr = item.ocrResult;
+    const extractedTitle    = ocr.merchant ?? "";
+    const extractedMerchant = ocr.merchant ?? "";
 
-    if (extractedTitle)          setTitle(extractedTitle);
-    if (extractedMerchant)       setMerchantName(extractedMerchant);
-    if (ocrResult.amount)        setAmount(String(ocrResult.amount));
-    if (ocrResult.items?.length) setNotes(ocrResult.items.join(", "));
+    setTitle(extractedTitle);
+    setMerchantName(extractedMerchant);
+    setAmount(ocr.amount != null ? String(ocr.amount) : "");
+    setNotes(ocr.items?.length ? ocr.items.join(", ") : "");
 
     setPendingReceiptUrl(receiptUrl);
-    setPendingRawOcr(ocrResult.raw_text ?? null);
+    setPendingRawOcr(ocr.raw_text ?? null);
 
     userOverrideRef.current = false;
 
     if (extractedTitle || extractedMerchant) {
       setCatState({ status: "loading" });
       setIsAutoCategorized(false);
-
       try {
         const res = await fetch("/api/categorize", {
           method:  "POST",
           headers: { "Content-Type": "application/json" },
           body:    JSON.stringify({ title: extractedTitle, merchantName: extractedMerchant }),
         });
-
         if (!res.ok) throw new Error("categorize failed");
-
         const data = await res.json();
-
         if (!userOverrideRef.current) {
           setCategory(data.category as ExpenseCategory);
           setIsAutoCategorized(true);
@@ -456,10 +669,70 @@ export default function PrototypePage() {
     formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
+  // Move to the next unsaved/unskipped item, computed from a given list.
+  function advanceFrom(list: QueuedReceipt[], excludeId: string | null) {
+    const next = list.find(q => q.id !== excludeId && !q.saved && !q.skipped && q.status === "done")
+              ?? list.find(q => q.id !== excludeId && !q.saved && !q.skipped);
+    if (next) loadQueueItemIntoForm(next);
+    else resetScanner();
+  }
+
+  // Backward-compatible wrapper used by the "Load this receipt" button.
+  function applyOCRToForm() {
+    if (activeItem) loadQueueItemIntoForm(activeItem);
+  }
+
+  // Re-run OCR for the active item (manual retry).
+  async function runOCR() {
+    if (!activeItem) return;
+    const id = activeItem.id;
+    setQueue(prev => prev.map(x => x.id === id ? { ...x, status: "processing", ocrError: null } : x));
+    try {
+      const res = await fetch("/api/ocr", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image: activeItem.base64, mimeType: activeItem.mime }) });
+      const data = await res.json();
+      if (data.error) {
+        setQueue(prev => prev.map(x => x.id === id ? { ...x, status: "error", ocrError: data.error } : x));
+      } else {
+        setQueue(prev => prev.map(x => x.id === id ? { ...x, status: "done", ocrResult: data, ocrError: null } : x));
+        loadQueueItemIntoForm({ ...activeItem, status: "done", ocrResult: data });
+      }
+    } catch {
+      setQueue(prev => prev.map(x => x.id === id ? { ...x, status: "error", ocrError: "Failed to process receipt. Please try again." } : x));
+    }
+  }
+
+  function removeFromQueue(id: string) {
+    const remaining = queue.filter(q => q.id !== id);
+    setQueue(remaining);
+    if (id === activeQueueId) {
+      clearForm();
+      setActiveQueueId(null);
+      if (remaining.length === 0) resetScanner();
+      else advanceFrom(remaining, id);
+    }
+  }
+
+  function skipActive() {
+    if (!activeQueueId) return;
+    const id = activeQueueId;
+    const updated = queue.map(q => q.id === id ? { ...q, skipped: true } : q);
+    setQueue(updated);
+    clearForm();
+    advanceFrom(updated, id);
+  }
+
+  function clearForm() {
+    setTitle(""); setAmount(""); setCategory("Food"); setMerchantName(""); setNotes("");
+    setIsAutoCategorized(false); setCategorizationSource(null);
+    setCatState({ status: "idle" }); userOverrideRef.current = false;
+    setPendingReceiptUrl(null); setPendingRawOcr(null);
+  }
+
   function resetScanner() {
-    stopStream(); setScannerMode("idle");
+    stopStream(); stopEsp32Polling(); setScannerMode("idle");
     setCapturedImageUrl(null); setCapturedBase64(null); setCapturedBlob(null);
     setOcrResult(null); setOcrError(null);
+    setQueue([]); setActiveQueueId(null); esp32SeenIds.current.clear();
     if (galleryInputRef.current) galleryInputRef.current.value = "";
   }
 
@@ -478,11 +751,15 @@ export default function PrototypePage() {
     }).select().single();
     if (!error && data) {
       setExpenses(prev => [data, ...prev]);
-      setTitle(""); setAmount(""); setCategory("Food"); setMerchantName(""); setNotes("");
-      setIsAutoCategorized(false); setCategorizationSource(null);
-      setCatState({ status: "idle" }); userOverrideRef.current = false;
-      setPendingReceiptUrl(null); setPendingRawOcr(null);
-      resetScanner();
+      clearForm();
+      const savedId = activeQueueId;
+      if (savedId) {
+        const updated = queue.map(q => q.id === savedId ? { ...q, saved: true } : q);
+        setQueue(updated);
+        advanceFrom(updated, savedId);
+      } else {
+        resetScanner();
+      }
     }
   }
 
@@ -496,14 +773,46 @@ export default function PrototypePage() {
     if (!error) setExpenses(prev => prev.filter(item => item.id !== expenseId));
   }
 
-  async function handleBudgetChange(value: string) {
-    setMonthlyBudget(value);
-    const parsedBudget = parseFloat(value);
-    if (Number.isNaN(parsedBudget) || parsedBudget <= 0) return;
+  // Keep the budgets table in sync with the income total so Chat/Insights stay correct.
+  async function syncBudget(list: Income[]) {
+    const total = list.reduce((s, i) => s + i.amount, 0);
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
     const month = new Date().toISOString().slice(0, 7);
-    await supabase.from("budgets").upsert({ user_id: user.id, monthly_budget: parsedBudget, month }, { onConflict: "user_id,month" });
+    await supabase.from("budgets").upsert({ user_id: user.id, monthly_budget: total, month }, { onConflict: "user_id,month" });
+  }
+
+  async function handleAddIncome(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setIncomeError(null);
+    const parsedAmount = Number(incomeAmount);
+    if (Number.isNaN(parsedAmount) || parsedAmount <= 0) {
+      setIncomeError("Enter an amount greater than 0.");
+      return;
+    }
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setIncomeError("You must be signed in to add income."); return; }
+    const month = new Date().toISOString().slice(0, 7);
+    const { data, error } = await supabase.from("incomes").insert({
+      user_id: user.id, category: incomeCategory, amount: parsedAmount, month,
+    }).select().single();
+    if (error || !data) {
+      setIncomeError(error?.message ?? "Could not save income. Make sure the 'incomes' table exists in Supabase.");
+      return;
+    }
+    const updated = [data as Income, ...incomes];
+    setIncomes(updated);
+    setIncomeAmount("");
+    syncBudget(updated);
+  }
+
+  async function handleDeleteIncome(incomeId: string) {
+    const { error } = await supabase.from("incomes").delete().eq("id", incomeId);
+    if (!error) {
+      const updated = incomes.filter(i => i.id !== incomeId);
+      setIncomes(updated);
+      syncBudget(updated);
+    }
   }
 
   const totals = useMemo(() => {
@@ -514,7 +823,13 @@ export default function PrototypePage() {
     return { total, byCategory, topCategory: topEntry?.[0] || "None", average };
   }, [expenses]);
 
-  const budgetValue = Number(monthlyBudget) || 0;
+  const totalIncome = useMemo(() => incomes.reduce((s, i) => s + i.amount, 0), [incomes]);
+  const incomeByCategory = useMemo(() => incomes.reduce<Record<IncomeCategory, number>>(
+    (acc, i) => { acc[i.category] = (acc[i.category] || 0) + i.amount; return acc; },
+    { Salary: 0, Business: 0, Freelance: 0, Allowance: 0, Investment: 0, Other: 0 }
+  ), [incomes]);
+
+  const budgetValue = totalIncome;
   const budgetLeft = Math.max(budgetValue - totals.total, 0);
   const budgetUsage = budgetValue > 0 ? Math.min((totals.total / budgetValue) * 100, 100) : 0;
   const budgetGrad = budgetUsage >= 80 ? "linear-gradient(90deg,#ef4444,#f87171)" : budgetUsage >= 60 ? "linear-gradient(90deg,#fb923c,#fbbf24)" : "linear-gradient(90deg,#14b8a6,#2dd4bf)";
@@ -548,9 +863,12 @@ export default function PrototypePage() {
   const CategoryDropdown = ({
     value, onChange, open, setOpen, dropRef, filterMode = false,
   }: {
-    value: string; onChange: (v: string) => void;
-    open: boolean; setOpen: (v: boolean) => void;
-    dropRef: React.RefObject<HTMLDivElement>; filterMode?: boolean;
+    value: string; 
+    onChange: (v: string) => void;
+    open: boolean; 
+    setOpen: (v: boolean) => void;
+    dropRef: React.RefObject<HTMLDivElement | null>; 
+    filterMode?: boolean;
   }) => {
     const options = filterMode ? ["All", ...categories] : categories;
     const CatIcon = value !== "All" ? CATEGORY_ICON_COMPONENTS[value as ExpenseCategory] : null;
@@ -689,6 +1007,18 @@ export default function PrototypePage() {
           .dash-cols-main { grid-template-columns: 1fr !important; }
         }
         @media (max-width: 540px) { .dash-cols-4 { grid-template-columns: 1fr !important; } }
+
+        @media (max-width: 640px) {
+          .cat-chips-row { overflow-x: auto !important; flex-wrap: nowrap !important; padding-bottom: 4px; scrollbar-width: none; }
+          .cat-chips-row::-webkit-scrollbar { display: none; }
+          .rec-row-inner { padding: 0.55rem 0.65rem !important; }
+          .rec-amount { font-size: 0.78rem !important; }
+          .del-label { display: none !important; }
+          .del-icon { display: inline !important; }
+          .rec-meta { flex-wrap: nowrap !important; overflow: hidden; max-width: 100%; }
+          .rec-meta span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 80px; }
+          .rec-expand { display: none !important; }
+        }
       `}</style>
 
       <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
@@ -724,13 +1054,13 @@ export default function PrototypePage() {
                 <p style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "#14b8a6" }}>OCR · AI-Powered</p>
               </div>
               <h2 style={{ fontSize: "1.2rem", fontWeight: 700, color: tx, margin: 0 }}>Scan a Receipt</h2>
-              <p style={{ fontSize: "0.82rem", color: txSub, marginTop: "0.3rem" }}>Use your live camera or upload a photo. Gemini AI extracts and categorizes automatically.</p>
+              <p style={{ fontSize: "0.82rem", color: txSub, marginTop: "0.3rem" }}>Scan one or many receipts — live camera, photo upload, or ESP32-CAM. Review each before adding.</p>
             </div>
             <span style={{ flexShrink: 0, padding: "0.3rem 0.8rem", borderRadius: 999, fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", background: "rgba(20,184,166,0.1)", border: "1px solid rgba(20,184,166,0.25)", color: "#14b8a6" }}>Gemini Vision</span>
           </div>
 
           <canvas ref={canvasRef} style={{ display: "none" }} />
-          <input ref={galleryInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={e => { handleGalleryPick(e.target.files?.[0]); e.target.value = ""; }} />
+          <input ref={galleryInputRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={e => { handleGalleryPick(e.target.files); e.target.value = ""; }} />
 
           <div className="dash-cols-main" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.2rem" }}>
             <div style={{ position: "relative", minHeight: 260, borderRadius: 16, border: `1.5px dashed ${isDark ? "rgba(20,184,166,0.2)" : "rgba(20,184,166,0.25)"}`, background: isDark ? "rgba(0,0,0,0.25)" : "rgba(20,184,166,0.02)", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
@@ -743,9 +1073,31 @@ export default function PrototypePage() {
                   <p style={{ fontSize: "0.75rem", color: txMute, marginTop: "0.25rem" }}>Start the live camera or upload an image</p>
                 </div>
               )}
+              {scannerMode === "esp32-waiting" && (
+                <div style={{ textAlign: "center", padding: "2rem" }}>
+                  <div style={{ width: 56, height: 56, borderRadius: 16, background: "rgba(20,184,166,0.1)", border: "1px solid rgba(20,184,166,0.3)", display: "grid", placeItems: "center", margin: "0 auto 1rem", boxShadow: "0 0 18px rgba(20,184,166,0.2)" }}>
+                    <IconESP32 size={26} color="#14b8a6" />
+                  </div>
+                  <p style={{ fontSize: "0.875rem", fontWeight: 600, color: "#14b8a6" }}>Waiting for ESP32-CAM…</p>
+                  <p style={{ fontSize: "0.75rem", color: txMute, marginTop: "0.25rem" }}>Reset or power your device to capture</p>
+                  <div style={{ display: "flex", gap: "0.35rem", justifyContent: "center", marginTop: "1rem" }}>
+                    {[0, 1, 2].map(i => (
+                      <div key={i} style={{ width: 6, height: 6, borderRadius: "50%", background: "#14b8a6", opacity: 0.6, animation: `pulse-dot 1.2s ease-in-out ${i * 0.4}s infinite` }} />
+                    ))}
+                  </div>
+                </div>
+              )}
               <video ref={videoRef} style={{ width: "100%", height: "100%", objectFit: "cover", display: scannerMode === "live" ? "block" : "none" }} playsInline muted />
-              {(scannerMode === "captured" || scannerMode === "processing") && capturedImageUrl && (
+              {(scannerMode === "captured" || scannerMode === "processing" || scannerMode === "review") && capturedImageUrl && (
                 <img src={capturedImageUrl} alt="Receipt" style={{ maxHeight: 280, width: "100%", objectFit: "contain" }} />
+              )}
+              {scannerMode === "review" && activeItem?.status === "processing" && (
+                <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.7)", backdropFilter: "blur(6px)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "1rem", borderRadius: 14 }}>
+                  <div style={{ position: "relative", width: 44, height: 44 }}>
+                    <div style={{ position: "absolute", inset: 0, borderRadius: "50%", border: "2px solid rgba(20,184,166,0.2)", borderTopColor: "#14b8a6", animation: "spin 0.9s linear infinite" }} />
+                  </div>
+                  <p style={{ fontSize: "0.875rem", fontWeight: 700, color: "#fff" }}>Reading receipt…</p>
+                </div>
               )}
               {scannerMode === "processing" && (
                 <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.7)", backdropFilter: "blur(6px)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "1rem", borderRadius: 14 }}>
@@ -776,10 +1128,16 @@ export default function PrototypePage() {
                   <button type="button" onClick={() => galleryInputRef.current?.click()} className="dash-btn-outline" style={{ display: "inline-flex", alignItems: "center", gap: "0.45rem", padding: "0.6rem 1.1rem", borderRadius: 10, background: "transparent", border: isDark ? "1px solid rgba(255,255,255,0.1)" : "1px solid rgba(0,0,0,0.12)", color: txSub, fontSize: "0.82rem", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
                     <IconUpload size={15} color={txSub} /> Upload Image
                   </button>
+                  <button type="button" onClick={startEsp32Mode} className="dash-btn-outline" style={{ display: "inline-flex", alignItems: "center", gap: "0.45rem", padding: "0.6rem 1.1rem", borderRadius: 10, background: "transparent", border: "1px solid rgba(20,184,166,0.35)", color: "#14b8a6", fontSize: "0.82rem", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+                    <IconESP32 size={15} color="#14b8a6" /> ESP32 Cam
+                  </button>
                 </>)}
                 {scannerMode === "live" && (<>
                   <button type="button" onClick={captureFrame} className="dash-btn-primary" style={{ display: "inline-flex", alignItems: "center", gap: "0.45rem", padding: "0.6rem 1.1rem", borderRadius: 10, border: "none", color: "#fff", fontSize: "0.82rem", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
                     <IconCapture size={15} color="#fff" /> Capture
+                  </button>
+                  <button type="button" onClick={() => { stopStream(); processQueue(queue); }} disabled={queue.length === 0} className="dash-btn-outline" style={{ display: "inline-flex", alignItems: "center", gap: "0.45rem", padding: "0.6rem 1rem", borderRadius: 10, background: "transparent", border: "1px solid rgba(20,184,166,0.35)", color: queue.length === 0 ? txMute : "#14b8a6", fontSize: "0.82rem", fontWeight: 600, cursor: queue.length === 0 ? "not-allowed" : "pointer", fontFamily: "inherit", opacity: queue.length === 0 ? 0.5 : 1 }}>
+                    <IconCheck size={15} color={queue.length === 0 ? txMute : "#14b8a6"} /> Done{queue.length > 0 ? ` (${queue.length})` : ""}
                   </button>
                   <button type="button" onClick={resetScanner} className="dash-btn-outline" style={{ display: "inline-flex", alignItems: "center", gap: "0.45rem", padding: "0.6rem 1rem", borderRadius: 10, background: "transparent", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171", fontSize: "0.82rem", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
                 </>)}
@@ -793,6 +1151,21 @@ export default function PrototypePage() {
                 {scannerMode === "processing" && (
                   <button type="button" disabled style={{ padding: "0.6rem 1.1rem", borderRadius: 10, background: "rgba(20,184,166,0.2)", border: "none", color: "#14b8a6", fontSize: "0.82rem", fontWeight: 700, cursor: "not-allowed", fontFamily: "inherit" }}>Analyzing…</button>
                 )}
+                {scannerMode === "esp32-waiting" && (<>
+                  <button type="button" onClick={() => { stopEsp32Polling(); processQueue(queue); }} disabled={queue.length === 0} className="dash-btn-outline" style={{ display: "inline-flex", alignItems: "center", gap: "0.45rem", padding: "0.6rem 1rem", borderRadius: 10, background: "transparent", border: "1px solid rgba(20,184,166,0.35)", color: queue.length === 0 ? txMute : "#14b8a6", fontSize: "0.82rem", fontWeight: 600, cursor: queue.length === 0 ? "not-allowed" : "pointer", fontFamily: "inherit", opacity: queue.length === 0 ? 0.5 : 1 }}>
+                    <IconCheck size={15} color={queue.length === 0 ? txMute : "#14b8a6"} /> Done{queue.length > 0 ? ` (${queue.length})` : ""}
+                  </button>
+                  <button type="button" onClick={resetScanner} className="dash-btn-outline" style={{ display: "inline-flex", alignItems: "center", gap: "0.45rem", padding: "0.6rem 1rem", borderRadius: 10, background: "transparent", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171", fontSize: "0.82rem", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+                </>)}
+                {scannerMode === "review" && (<>
+                  {activeItem?.status === "error" && (
+                    <button type="button" onClick={runOCR} className="dash-btn-primary" style={{ display: "inline-flex", alignItems: "center", gap: "0.45rem", padding: "0.6rem 1.1rem", borderRadius: 10, border: "none", color: "#fff", fontSize: "0.82rem", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                      <IconScan size={15} color="#fff" /> Retry OCR
+                    </button>
+                  )}
+                  <button type="button" onClick={skipActive} className="dash-btn-outline" style={{ display: "inline-flex", alignItems: "center", gap: "0.45rem", padding: "0.6rem 1rem", borderRadius: 10, background: "transparent", border: isDark ? "1px solid rgba(255,255,255,0.1)" : "1px solid rgba(0,0,0,0.12)", color: txSub, fontSize: "0.82rem", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Skip this</button>
+                  <button type="button" onClick={resetScanner} className="dash-btn-outline" style={{ display: "inline-flex", alignItems: "center", gap: "0.45rem", padding: "0.6rem 1rem", borderRadius: 10, background: "transparent", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171", fontSize: "0.82rem", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Cancel All</button>
+                </>)}
               </div>
               {ocrError && (
                 <div style={{ padding: "0.75rem 1rem", borderRadius: 10, background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", fontSize: "0.8rem", color: "#f87171", display: "flex", gap: "0.5rem", alignItems: "flex-start" }}>
@@ -801,7 +1174,14 @@ export default function PrototypePage() {
               )}
               <div style={{ flex: 1, borderRadius: 14, background: isDark ? "rgba(255,255,255,0.025)" : "rgba(0,0,0,0.02)", border: isDark ? "1px solid rgba(255,255,255,0.06)" : "1px solid rgba(0,0,0,0.07)", padding: "1rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <p style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "#14b8a6" }}>Extracted Data</p>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                    <p style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "#14b8a6" }}>Extracted Data</p>
+                    {reviewables.length > 1 && activeReviewIndex >= 0 && (
+                      <span style={{ fontSize: "0.62rem", fontWeight: 700, padding: "0.1rem 0.45rem", borderRadius: 999, background: "rgba(99,102,241,0.12)", border: "1px solid rgba(99,102,241,0.25)", color: "#818cf8" }}>
+                        Receipt {activeReviewIndex + 1} of {reviewables.length}
+                      </span>
+                    )}
+                  </div>
                   {ocrResult && (
                     <span style={{ fontSize: "0.68rem", fontWeight: 700, padding: "0.15rem 0.5rem", borderRadius: 999, background: ocrResult.confidence >= 70 ? "rgba(20,184,166,0.1)" : "rgba(251,146,60,0.1)", color: ocrResult.confidence >= 70 ? "#14b8a6" : "#fb923c", border: `1px solid ${ocrResult.confidence >= 70 ? "rgba(20,184,166,0.3)" : "rgba(251,146,60,0.3)"}` }}>
                       {ocrResult.confidence}% match
@@ -819,11 +1199,44 @@ export default function PrototypePage() {
                 <button type="button" onClick={applyOCRToForm} disabled={!ocrResult || ocrResult.confidence === 0} className="dash-btn-primary"
                   style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "0.45rem", width: "100%", padding: "0.7rem", borderRadius: 10, border: "none", fontWeight: 700, fontSize: "0.82rem", cursor: ocrResult && ocrResult.confidence > 0 ? "pointer" : "not-allowed", fontFamily: "inherit", background: ocrResult && ocrResult.confidence > 0 ? undefined : isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.06)", color: ocrResult && ocrResult.confidence > 0 ? "#fff" : txMute, opacity: ocrResult && ocrResult.confidence > 0 ? 1 : 0.5 }}>
                   {ocrResult && ocrResult.confidence > 0 && <IconCheck size={14} color="#fff" />}
-                  {ocrResult ? "Apply to Expense Form" : "Apply to Expense Form"}
+                  {scannerMode === "review" ? "Load into Form" : "Apply to Expense Form"}
                 </button>
               </div>
             </div>
           </div>
+
+          {queue.length > 1 && (
+            <div style={{ position: "relative", marginTop: "1.2rem", paddingTop: "1.2rem", borderTop: isDark ? "1px solid rgba(255,255,255,0.06)" : "1px solid rgba(0,0,0,0.07)" }}>
+              <p style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: txMute, marginBottom: "0.7rem" }}>
+                Receipt Queue · {queue.filter(q => q.saved).length}/{queue.length} added
+              </p>
+              <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
+                {queue.map(q => {
+                  const isActive = q.id === activeQueueId;
+                  const ring = q.saved ? "#22c55e" : q.skipped ? "#64748b" : q.status === "error" ? "#f87171" : q.status === "done" ? "#14b8a6" : isDark ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.12)";
+                  return (
+                    <div key={q.id} style={{ position: "relative", width: 52, height: 52, borderRadius: 10, overflow: "hidden", flexShrink: 0, cursor: q.status === "done" && !q.saved ? "pointer" : "default", border: `2px solid ${ring}`, boxShadow: isActive ? "0 0 0 2px rgba(20,184,166,0.35)" : "none", opacity: q.skipped ? 0.45 : 1 }}
+                      onClick={() => { if (q.status === "done" && !q.saved) loadQueueItemIntoForm(q); }}
+                      title={q.saved ? "Added" : q.skipped ? "Skipped" : q.status === "error" ? (q.ocrError ?? "OCR failed") : q.status}>
+                      <img src={q.imageUrl} alt="Receipt" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.25)" }} />
+                      <div style={{ position: "absolute", bottom: 2, right: 2, width: 16, height: 16, borderRadius: "50%", background: "rgba(0,0,0,0.65)", display: "grid", placeItems: "center" }}>
+                        {q.saved ? <IconCheck size={10} color="#22c55e" />
+                          : q.status === "processing" ? <div style={{ width: 9, height: 9, borderRadius: "50%", border: "1.5px solid rgba(20,184,166,0.3)", borderTopColor: "#14b8a6", animation: "spin 0.7s linear infinite" }} />
+                          : q.status === "error" ? <IconWarning size={10} color="#f87171" />
+                          : q.status === "done" ? <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#14b8a6" }} />
+                          : <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#94a3b8" }} />}
+                      </div>
+                      {!q.saved && (
+                        <button type="button" onClick={e => { e.stopPropagation(); removeFromQueue(q.id); }}
+                          style={{ position: "absolute", top: 1, right: 1, width: 16, height: 16, borderRadius: "50%", background: "rgba(0,0,0,0.7)", border: "none", color: "#fff", fontSize: "0.7rem", lineHeight: 1, cursor: "pointer", display: "grid", placeItems: "center", padding: 0 }}>×</button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* ── Add Expense + Records ── */}
@@ -892,11 +1305,6 @@ export default function PrototypePage() {
               <textarea className="dash-input" rows={2} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional notes…" style={{ ...inputBase, resize: "none" }} />
             </div>
 
-            <div>
-              <label style={{ display: "block", fontSize: "0.72rem", fontWeight: 600, color: txMute, marginBottom: "0.35rem", letterSpacing: "0.04em" }}>Monthly Budget (PHP)</label>
-              <input className="dash-input" type="number" min="0" step="1" value={monthlyBudget} onChange={e => handleBudgetChange(e.target.value)} placeholder="10000" style={inputBase} />
-            </div>
-
             {pendingReceiptUrl && (
               <div style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", padding: "0.6rem 0.8rem", borderRadius: 10, background: "rgba(20,184,166,0.08)", border: "1px solid rgba(20,184,166,0.2)", fontSize: "0.78rem", color: "#14b8a6" }}>
                 <IconReceipt size={14} color="#14b8a6" /> Receipt image ready to attach
@@ -928,7 +1336,7 @@ export default function PrototypePage() {
               </div>
             </div>
 
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.4rem" }}>
+            <div className="cat-chips-row" style={{ display: "flex", flexWrap: "wrap", gap: "0.4rem" }}>
               {(["All", ...categories] as (ExpenseCategory | "All")[]).map(c => {
                 const CIcon = c !== "All" ? CATEGORY_ICON_COMPONENTS[c as ExpenseCategory] : null;
                 const cColor = c !== "All" ? CATEGORY_COLORS[c as ExpenseCategory] : txMute;
@@ -943,21 +1351,21 @@ export default function PrototypePage() {
               })}
             </div>
 
-            <div className="scroll-list" style={{ display: "flex", flexDirection: "column", gap: "0.4rem", maxHeight: 440, overflowY: "auto", paddingRight: "0.25rem" }}>
+            <div className="scroll-list" style={{ display: "flex", flexDirection: "column", gap: "0.4rem", maxHeight: "clamp(260px, 45vh, 520px)", overflowY: "auto", paddingRight: "0.25rem" }}>
               {filteredExpenses.map(item => {
                 const CatIcon = CATEGORY_ICON_COMPONENTS[item.category];
                 const itemSource = item.categorization_source ?? null;
 
                 return (
-                  <div key={item.id} className="expense-row" style={{ border: isDark ? "1px solid rgba(255,255,255,0.05)" : "1px solid rgba(0,0,0,0.07)", overflow: "hidden" }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.8rem 1rem" }}>
+                  <div key={item.id} className="expense-row" style={{ border: isDark ? "1px solid rgba(255,255,255,0.05)" : "1px solid rgba(0,0,0,0.07)", overflow: "hidden", flexShrink: 0 }}>
+                    <div className="rec-row-inner" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.8rem 1rem" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", minWidth: 0 }}>
                         <div style={{ width: 36, height: 36, borderRadius: 10, background: `${CATEGORY_COLORS[item.category]}18`, border: `1px solid ${CATEGORY_COLORS[item.category]}30`, display: "grid", placeItems: "center", flexShrink: 0 }}>
                           <CatIcon size={16} color={CATEGORY_COLORS[item.category]} />
                         </div>
                         <div style={{ minWidth: 0 }}>
                           <p style={{ fontWeight: 600, fontSize: "0.875rem", color: tx, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.title}</p>
-                          <div style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap", marginTop: "0.15rem", alignItems: "center" }}>
+                          <div className="rec-meta" style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap", marginTop: "0.15rem", alignItems: "center" }}>
                             <span style={{ fontSize: "0.7rem", color: txMute }}>{item.category}</span>
                             {item.merchant_name && <span style={{ fontSize: "0.7rem", color: txMute }}>· {item.merchant_name}</span>}
                             {item.created_at && <span style={{ fontSize: "0.7rem", color: txMute }}>· {new Date(item.created_at).toLocaleDateString("en-PH", { month: "short", day: "numeric" })}</span>}
@@ -966,16 +1374,17 @@ export default function PrototypePage() {
                         </div>
                       </div>
                       <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexShrink: 0, marginLeft: "0.5rem" }}>
-                        <span style={{ fontWeight: 700, fontSize: "0.9rem", color: tx }}>{pesoFormatter.format(item.amount)}</span>
+                        <span className="rec-amount" style={{ fontWeight: 700, fontSize: "0.9rem", color: tx, whiteSpace: "nowrap" }}>{pesoFormatter.format(item.amount)}</span>
                         {(item.notes || item.receipt_image_url) && (
-                          <button type="button" onClick={() => setExpandedId(expandedId === item.id ? null : item.id)}
+                          <button type="button" className="rec-expand" onClick={() => setExpandedId(expandedId === item.id ? null : item.id)}
                             style={{ padding: "0.2rem 0.45rem", borderRadius: 6, background: "transparent", border: isDark ? "1px solid rgba(255,255,255,0.08)" : "1px solid rgba(0,0,0,0.1)", cursor: "pointer", fontSize: "0.62rem", color: txMute }}>
                             {expandedId === item.id ? "▲" : "▼"}
                           </button>
                         )}
                         <button type="button" className="del-btn" onClick={() => handleDeleteExpense(item.id)}
                           style={{ padding: "0.25rem 0.6rem", borderRadius: 7, background: "transparent", border: "1px solid rgba(239,68,68,0.18)", color: "#f87171", fontSize: "0.7rem", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
-                          Delete
+                          <span className="del-label">Delete</span>
+                          <span className="del-icon" style={{ display: "none" }}>×</span>
                         </button>
                       </div>
                     </div>
@@ -1002,11 +1411,117 @@ export default function PrototypePage() {
           </div>
         </div>
 
+        {/* ── Source of Income (with Income Breakdown) ── */}
+        <div>
+          <div style={{ ...glass, borderRadius: 22, padding: "1.6rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
+            <div>
+              <h2 style={{ fontSize: "1.05rem", fontWeight: 700, color: tx, margin: 0 }}>Source of Income</h2>
+              <p style={{ fontSize: "0.72rem", color: txMute, marginTop: "0.15rem" }}>Your monthly budget is built from your income</p>
+            </div>
+
+            <div style={{ padding: "1rem", borderRadius: 14, background: isDark ? "rgba(20,184,166,0.06)" : "rgba(20,184,166,0.05)", border: "1px solid rgba(20,184,166,0.2)" }}>
+              <p style={{ fontSize: "0.68rem", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: txMute }}>Total Monthly Income · Budget</p>
+              <p style={{ fontSize: "1.8rem", fontWeight: 800, letterSpacing: "-0.02em", color: "#14b8a6", marginTop: "0.2rem" }}>{pesoFormatter.format(totalIncome)}</p>
+            </div>
+
+            <form onSubmit={handleAddIncome} style={{ display: "flex", flexDirection: "column", gap: "0.7rem" }}>
+              <label style={{ fontSize: "0.72rem", fontWeight: 600, color: txMute, letterSpacing: "0.04em" }}>Income Category</label>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.4rem" }}>
+                {incomeCategories.map(c => {
+                  const CIcon = INCOME_CATEGORY_ICON_COMPONENTS[c];
+                  const active = incomeCategory === c;
+                  return (
+                    <button key={c} type="button" onClick={() => setIncomeCategory(c)}
+                      className={`cat-chip${active ? " active" : ""}`}
+                      style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem", padding: "0.28rem 0.65rem", borderRadius: 999, fontSize: "0.7rem", fontWeight: 600, background: "transparent", border: isDark ? "1px solid rgba(255,255,255,0.08)" : "1px solid rgba(0,0,0,0.1)", color: txMute, fontFamily: "inherit" }}>
+                      <CIcon size={11} color={active ? "#14b8a6" : INCOME_CATEGORY_COLORS[c]} />
+                      {c}
+                    </button>
+                  );
+                })}
+              </div>
+              <div style={{ display: "flex", gap: "0.5rem" }}>
+                <input className="dash-input" type="number" min="0.01" step="0.01" value={incomeAmount} onChange={e => setIncomeAmount(e.target.value)} placeholder="Amount (PHP)" style={{ ...inputBase, flex: 1 }} />
+                <button type="submit" className="dash-btn-primary" style={{ padding: "0.7rem 1.1rem", borderRadius: 10, border: "none", color: "#fff", fontSize: "0.82rem", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>+ Add</button>
+              </div>
+              {incomeError && (
+                <div style={{ padding: "0.6rem 0.8rem", borderRadius: 10, background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", fontSize: "0.76rem", color: "#f87171", display: "flex", gap: "0.5rem", alignItems: "flex-start" }}>
+                  <IconWarning size={14} color="#f87171" /><span>{incomeError}</span>
+                </div>
+              )}
+            </form>
+
+            <div className="scroll-list" style={{ display: "flex", flexDirection: "column", gap: "0.4rem", maxHeight: 220, overflowY: "auto", paddingRight: "0.25rem" }}>
+              {incomes.map(item => {
+                const CIcon = INCOME_CATEGORY_ICON_COMPONENTS[item.category];
+                const color = INCOME_CATEGORY_COLORS[item.category];
+                return (
+                  <div key={item.id} className="expense-row" style={{ border: isDark ? "1px solid rgba(255,255,255,0.05)" : "1px solid rgba(0,0,0,0.07)", overflow: "hidden", flexShrink: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.7rem 0.9rem" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.7rem", minWidth: 0 }}>
+                        <div style={{ width: 34, height: 34, borderRadius: 9, background: `${color}18`, border: `1px solid ${color}30`, display: "grid", placeItems: "center", flexShrink: 0 }}>
+                          <CIcon size={15} color={color} />
+                        </div>
+                        <div style={{ minWidth: 0 }}>
+                          <p style={{ fontWeight: 600, fontSize: "0.85rem", color: tx }}>{item.category}</p>
+                          {item.created_at && <span style={{ fontSize: "0.7rem", color: txMute }}>{new Date(item.created_at).toLocaleDateString("en-PH", { month: "short", day: "numeric" })}</span>}
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexShrink: 0 }}>
+                        <span style={{ fontWeight: 700, fontSize: "0.88rem", color: "#14b8a6" }}>{pesoFormatter.format(item.amount)}</span>
+                        <button type="button" className="del-btn" onClick={() => handleDeleteIncome(item.id)}
+                          style={{ padding: "0.25rem 0.6rem", borderRadius: 7, background: "transparent", border: "1px solid rgba(239,68,68,0.18)", color: "#f87171", fontSize: "0.7rem", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Delete</button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+              {incomes.length === 0 && (
+                <div style={{ padding: "1.8rem 1rem", textAlign: "center", borderRadius: 14, border: isDark ? "1.5px dashed rgba(255,255,255,0.06)" : "1.5px dashed rgba(0,0,0,0.08)", color: txMute, fontSize: "0.82rem" }}>
+                  No income yet. Add a source above to set your budget.
+                </div>
+              )}
+            </div>
+
+            {/* ── Income Breakdown ── */}
+            <div style={{ paddingTop: "1.2rem", borderTop: isDark ? "1px solid rgba(255,255,255,0.06)" : "1px solid rgba(0,0,0,0.07)" }}>
+              <h3 style={{ fontSize: "0.95rem", fontWeight: 700, color: tx, margin: "0 0 1rem" }}>Income Breakdown</h3>
+              {totalIncome === 0 ? (
+                <p style={{ fontSize: "0.82rem", color: txMute }}>Add income sources to see your breakdown.</p>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+                  {Object.entries(incomeByCategory).sort((a, b) => b[1] - a[1]).filter(([, v]) => v > 0).map(([name, value]) => {
+                    const pct = totalIncome > 0 ? (value / totalIncome) * 100 : 0;
+                    const color = INCOME_CATEGORY_COLORS[name as IncomeCategory] ?? "#64748b";
+                    const CIcon = INCOME_CATEGORY_ICON_COMPONENTS[name as IncomeCategory] ?? IconOther;
+                    return (
+                      <div key={name}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.4rem" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                            <div style={{ width: 26, height: 26, borderRadius: 7, background: `${color}18`, display: "grid", placeItems: "center" }}>
+                              <CIcon size={13} color={color} />
+                            </div>
+                            <span style={{ fontSize: "0.85rem", fontWeight: 600, color: tx }}>{name}</span>
+                          </div>
+                          <span style={{ fontSize: "0.78rem", color: txSub }}>{pesoFormatter.format(value)} · <span style={{ color }}>{pct.toFixed(0)}%</span></span>
+                        </div>
+                        <div style={{ height: 6, borderRadius: 999, background: isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.06)", overflow: "hidden" }}>
+                          <div style={{ height: "100%", borderRadius: 999, background: color, width: `${pct}%`, transition: "width 0.8s cubic-bezier(0.22,1,0.36,1)", opacity: 0.9 }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
         {/* ── Budget Health + Category Breakdown ── */}
         <div className="dash-cols-main" style={{ display: "grid", gridTemplateColumns: "2fr 3fr", gap: "1.2rem" }}>
           <div style={{ ...glass, borderRadius: 22, padding: "1.6rem" }}>
             <h2 style={{ fontSize: "1.05rem", fontWeight: 700, color: tx, margin: "0 0 0.2rem" }}>Budget Health</h2>
-            <p style={{ fontSize: "0.78rem", color: txMute, marginBottom: "1.2rem" }}>Remaining budget this month</p>
+            <p style={{ fontSize: "0.78rem", color: txMute, marginBottom: "1.2rem" }}>Remaining from your income this month</p>
             <p style={{ fontSize: "2.2rem", fontWeight: 800, letterSpacing: "-0.03em", color: budgetUsage >= 80 ? "#f87171" : "#14b8a6", marginBottom: "0.8rem" }}>{pesoFormatter.format(budgetLeft)}</p>
             <div style={{ position: "relative", height: 8, borderRadius: 999, background: isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.07)", overflow: "hidden", marginBottom: "0.5rem" }}>
               <div style={{ position: "absolute", inset: 0, width: `${budgetUsage}%`, background: budgetGrad, borderRadius: 999, transition: "width 0.8s cubic-bezier(0.22,1,0.36,1)" }} />

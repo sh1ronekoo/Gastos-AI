@@ -130,7 +130,7 @@ const Icons = {
   ),
 };
 
-const CATEGORY_ICON_COMPONENTS: Record<string, () => JSX.Element> = {
+const CATEGORY_ICON_COMPONENTS: Record<string, React.ComponentType> = {
   Food: Icons.Food,
   Transport: Icons.Transport,
   Utilities: Icons.Utilities,
@@ -154,8 +154,10 @@ export default function InsightsPage() {
       const { data: expensesData } = await supabase.from("expenses").select("*").order("created_at", { ascending: false });
       if (expensesData) setExpenses(expensesData as Expense[]);
       const month = new Date().toISOString().slice(0, 7);
-      const { data: budgetData } = await supabase.from("budgets").select("*").eq("month", month).single();
-      if (budgetData) setBudget(String(budgetData.monthly_budget));
+      // Budget = sum of income sources for the current month (same source of truth as the dashboard).
+      const { data: incomeData } = await supabase.from("incomes").select("amount").eq("month", month);
+      const totalIncome = (incomeData ?? []).reduce((s, i) => s + Number(i.amount), 0);
+      setBudget(String(totalIncome));
     };
     fetchData();
   }, []);

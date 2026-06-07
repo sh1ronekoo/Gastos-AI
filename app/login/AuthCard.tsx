@@ -135,7 +135,9 @@ export default function AuthCard({ defaultMode = "login", onSuccess }: AuthCardP
     }
     setLoading(false);
     if (onSuccess) onSuccess();
-    else router.push("/prototype");
+
+    router.push("/prototype");
+    router.refresh();
   };
 
   const setField = (field: keyof FormState) => (e: React.ChangeEvent<HTMLInputElement>) => {
