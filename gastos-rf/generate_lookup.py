@@ -32,7 +32,7 @@ with open(csv_path, encoding="utf-8") as f:
 
 # Write JSON (for local tooling)
 with open(json_out, "w", encoding="utf-8") as f:
-    json.dump(lookup, f, ensure_ascii=False, indent=None)
+    json.dump(lookup, f, ensure_ascii=False, indent=2)
 
 # Write TypeScript module (used by Next.js — avoids JSON import issues on Vercel)
 ts_lines = ["const expenseLookup: Record<string, string> = {"]
