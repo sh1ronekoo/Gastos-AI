@@ -181,10 +181,8 @@ Reply with only the category name, nothing else.`;
       ) as ExpenseCategory | undefined;
 
       if (matched) return matched;
-    } catch (err: unknown) {
-      const status = (err as { status?: number })?.status;
-      if (status === 503 || status === 429) continue;
-      break;
+    } catch {
+      continue;
     }
   }
 
