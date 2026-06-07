@@ -4,14 +4,21 @@ train.py
 Trains a TF-IDF → Random Forest pipeline on labeled Philippine expense data.
 Saves the model to model/rf_categorizer.joblib.
 
+Data sources (merged automatically):
+  1. TRAINING_DATA  — hardcoded PH-focused samples below
+  2. data/supplementary.jsonl  — user corrections appended by /retrain endpoint
+  3. data/supabase_export.jsonl — real user expenses exported by data/fetch_supabase.py
+
 Run:
     python train.py
 """
 
 import os
+import csv as _csv
 import json
 import joblib
 import numpy as np
+from pathlib import Path
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.pipeline import Pipeline
@@ -20,6 +27,8 @@ from sklearn.metrics import classification_report
 
 # ── Categories (must match ExpenseCategory in TypeScript exactly) ─────────────
 CATEGORIES = ["Food", "Transport", "Utilities", "Shopping", "Health", "Other"]
+
+DATA_DIR = Path(__file__).parent / "data"
 
 # ── Labeled training data (PH-focused) ───────────────────────────────────────
 # Format: (text, category)
@@ -68,6 +77,41 @@ TRAINING_DATA = [
     ("pagkain food allowance", "Food"),
     ("fishball street food vendor", "Food"),
     ("isaw barbecue streetfood", "Food"),
+    # New Food samples
+    ("gong cha milk tea gong cha", "Food"),
+    ("macao imperial tea macao imperial", "Food"),
+    ("chatime milk tea chatime", "Food"),
+    ("tiger sugar boba tiger sugar", "Food"),
+    ("coco fresh tea coco", "Food"),
+    ("goldilocks cake goldilocks bakery", "Food"),
+    ("red ribbon birthday cake red ribbon", "Food"),
+    ("julie's bakeshop bread julies", "Food"),
+    ("pan de sal bakery local bakeshop", "Food"),
+    ("mary grace cafe mary grace", "Food"),
+    ("figaro coffee figaro", "Food"),
+    ("tropical hut burger tropical hut", "Food"),
+    ("angel's burger burger stand", "Food"),
+    ("potato corner fries potato corner", "Food"),
+    ("inasal chicken paborito", "Food"),
+    ("pork bbq barbecue restaurant", "Food"),
+    ("lechon baboy litson", "Food"),
+    ("bulalo soup restaurant", "Food"),
+    ("kare kare ox tripe restaurant", "Food"),
+    ("halo halo dessert dessert shop", "Food"),
+    ("mais con yelo dessert", "Food"),
+    ("taho vendor street taho", "Food"),
+    ("balut vendor night market", "Food"),
+    ("kwek kwek street food", "Food"),
+    ("pizza express pizza express davao", "Food"),
+    ("family mart convenience store", "Food"),
+    ("ok convenience convenience store", "Food"),
+    ("ever supermarket ever grocery", "Food"),
+    ("aldi grocery aldi", "Food"),
+    ("waltermart grocery waltermart", "Food"),
+    ("new farmer's market grocery", "Food"),
+    ("super 8 grocery super 8", "Food"),
+    ("s&r membership shopping snr", "Food"),
+    ("costco grocery costco", "Food"),
 
     # ── Transport ─────────────────────────────────────────────────────────────
     ("grab car grab ph", "Transport"),
@@ -103,6 +147,32 @@ TRAINING_DATA = [
     ("commute fare daily commute", "Transport"),
     ("gas refill gasoline station", "Transport"),
     ("diesel fill up fuel station", "Transport"),
+    # New Transport samples
+    ("grab express delivery grab", "Transport"),
+    ("taxi fare yellow cab taxi", "Transport"),
+    ("metered taxi taxi davao", "Transport"),
+    ("grab taxi grab ph", "Transport"),
+    ("pedicab fare pedicab", "Transport"),
+    ("boat ferry roro ferry line", "Transport"),
+    ("ferry ticket 2go travel", "Transport"),
+    ("supercat ferry supercat", "Transport"),
+    ("oceanjet ferry oceanjet", "Transport"),
+    ("van for hire van hire", "Transport"),
+    ("tnvs ride tnvs operator", "Transport"),
+    ("car rental transport rental", "Transport"),
+    ("car service professional driver", "Transport"),
+    ("srt train srt davao", "Transport"),
+    ("fuel reload fuel refill", "Transport"),
+    ("total gasoline total gas davao", "Transport"),
+    ("seaoil fuel seaoil", "Transport"),
+    ("unioil fuel unioil", "Transport"),
+    ("mc battery battery replacement shop", "Transport"),
+    ("car maintenance mechanic shop", "Transport"),
+    ("toll fee skyway", "Transport"),
+    ("skyway toll skyway", "Transport"),
+    ("cala expressway toll cavite laguna", "Transport"),
+    ("grab pabili delivery grab", "Transport"),
+    ("mabuhay miles air miles", "Transport"),
 
     # ── Utilities ─────────────────────────────────────────────────────────────
     ("meralco bill meralco", "Utilities"),
@@ -134,6 +204,30 @@ TRAINING_DATA = [
     ("sun cellular load sun", "Utilities"),
     ("landline bill pldt", "Utilities"),
     ("hoa dues homeowners association", "Utilities"),
+    # New Utilities samples
+    ("netflix monthly subscription netflix", "Utilities"),
+    ("spotify premium monthly spotify", "Utilities"),
+    ("youtube premium subscription google", "Utilities"),
+    ("disney plus monthly disney+", "Utilities"),
+    ("apple music subscription apple", "Utilities"),
+    ("amazon prime membership amazon", "Utilities"),
+    ("icloud storage apple icloud", "Utilities"),
+    ("google one storage google", "Utilities"),
+    ("microsoft 365 subscription microsoft", "Utilities"),
+    ("adobe creative cloud subscription adobe", "Utilities"),
+    ("canva pro monthly canva", "Utilities"),
+    ("zoom subscription zoom", "Utilities"),
+    ("meralco online payment electricity", "Utilities"),
+    ("davao light electricity bill davao light", "Utilities"),
+    ("benguet electric cooperative electricity", "Utilities"),
+    ("globe at home wifi globe", "Utilities"),
+    ("smart home wifi smart", "Utilities"),
+    ("globe fiber subscription globe", "Utilities"),
+    ("converge monthly broadband converge", "Utilities"),
+    ("room rental boarding house", "Utilities"),
+    ("dorm fee dormitory monthly", "Utilities"),
+    ("condo association fee condo management", "Utilities"),
+    ("water district monthly bill", "Utilities"),
 
     # ── Shopping ──────────────────────────────────────────────────────────────
     ("shopee online order shopee ph", "Shopping"),
@@ -166,6 +260,37 @@ TRAINING_DATA = [
     ("carousell secondhand carousell ph", "Shopping"),
     ("jeans denim clothing store", "Shopping"),
     ("dress clothes fashion boutique", "Shopping"),
+    # New Shopping samples
+    ("ikea furniture ikea", "Shopping"),
+    ("home furniture store living room set", "Shopping"),
+    ("wilcon depot hardware wilcon", "Shopping"),
+    ("true value hardware true value", "Shopping"),
+    ("home depot tools hardware store", "Shopping"),
+    ("abenson appliance abenson", "Shopping"),
+    ("sm appliance center ref washing machine", "Shopping"),
+    ("anson's appliance store ansons", "Shopping"),
+    ("cd r king gadget cdrkng", "Shopping"),
+    ("octagon computer laptop octagon", "Shopping"),
+    ("silicon valley gadget silicon valley", "Shopping"),
+    ("istore apple istore", "Shopping"),
+    ("digistore mac laptop digistore", "Shopping"),
+    ("samsung phone samsung store", "Shopping"),
+    ("secondhand ref furniture ukay", "Shopping"),
+    ("ukay ukay thrift shop", "Shopping"),
+    ("divisoria shopping divisoria manila", "Shopping"),
+    ("tiangge bazaar items", "Shopping"),
+    ("forever 21 fashion forever 21", "Shopping"),
+    ("cotton on clothes cotton on", "Shopping"),
+    ("bershka fashion bershka", "Shopping"),
+    ("pull and bear clothes pull bear", "Shopping"),
+    ("nike shoes nike ph", "Shopping"),
+    ("adidas sneakers adidas", "Shopping"),
+    ("new balance shoes new balance", "Shopping"),
+    ("converse shoes converse", "Shopping"),
+    ("watch accessories watch shop", "Shopping"),
+    ("perfume fragrance shop", "Shopping"),
+    ("cosmetics makeup beauty store", "Shopping"),
+    ("national bookstore school supplies nbs", "Shopping"),
 
     # ── Health ────────────────────────────────────────────────────────────────
     ("mercury drug medicine mercury drug", "Health"),
@@ -176,6 +301,17 @@ TRAINING_DATA = [
     ("medicine vitamins pharmacy", "Health"),
     ("botika medicine local pharmacy", "Health"),
     ("hospital bill davao doctors hospital", "Health"),
+    ("hospital", "Health"),
+    ("hospital bill", "Health"),
+    ("hospital expense", "Health"),
+    ("hospital payment", "Health"),
+    ("hospital fee", "Health"),
+    ("davao doctors hospital", "Health"),
+    ("the medical city", "Health"),
+    ("st lukes hospital", "Health"),
+    ("makati medical", "Health"),
+    ("world citi hospital", "Health"),
+    ("capitol medical center", "Health"),
     ("clinic consultation medical clinic", "Health"),
     ("doctor consultation physician", "Health"),
     ("check up annual physical", "Health"),
@@ -206,12 +342,41 @@ TRAINING_DATA = [
     ("hmo health card maxicare", "Health"),
     ("health insurance premium insurance co", "Health"),
     ("konsulta doctor telemed", "Health"),
+    # New Health samples
+    ("pedia consultation pediatrician", "Health"),
+    ("ob gyne consultation obstetrician", "Health"),
+    ("eye clinic ophthalmologist", "Health"),
+    ("orthodontist braces dental", "Health"),
+    ("tooth cleaning prophylaxis dental", "Health"),
+    ("root canal endodontic treatment", "Health"),
+    ("medical certificate clinic", "Health"),
+    ("covid antigen test swab test", "Health"),
+    ("pcr test covid test", "Health"),
+    ("rapid antigen test pharmacy", "Health"),
+    ("drug test urine test clinic", "Health"),
+    ("physical therapy rehabilitation clinic", "Health"),
+    ("chiropractor chiropractic session", "Health"),
+    ("acupuncture wellness traditional", "Health"),
+    ("medgrocer online pharmacy medgrocer", "Health"),
+    ("pharmacy plus medicine store", "Health"),
+    ("ritemed generic medicine ritemed", "Health"),
+    ("metroplus pharmacy medicine", "Health"),
+    ("celerio pharmacy cebu pharmacy", "Health"),
+    ("skin care dermatologist clinic", "Health"),
+    ("botox filler aesthetic clinic", "Health"),
+    ("laser hair removal aesthetic center", "Health"),
+    ("facial beauty salon", "Health"),
+    ("nail salon manicure pedicure", "Health"),
+    ("sss monthly contribution sss", "Health"),
+    ("pagibig contribution pagibig", "Health"),
+    ("maxicare hmo premium maxicare", "Health"),
+    ("intellicare hmo intellicare", "Health"),
+    ("medicard health card medicard", "Health"),
+    ("yoga class yoga studio", "Health"),
+    ("crossfit gym crossfit box", "Health"),
+    ("muay thai gym martial arts", "Health"),
 
     # ── Other ─────────────────────────────────────────────────────────────────
-    ("netflix subscription netflix", "Other"),
-    ("spotify premium spotify", "Other"),
-    ("youtube premium google", "Other"),
-    ("disney plus subscription disney+", "Other"),
     ("mobile legends diamonds moonton", "Other"),
     ("valorant points riot games", "Other"),
     ("steam game valve steam", "Other"),
@@ -239,8 +404,139 @@ TRAINING_DATA = [
     ("event ticket concert venue", "Other"),
     ("gift souvenir pasalubong", "Other"),
     ("donation fund drive", "Other"),
+    # New Other samples
+    ("mobile data e-load e-load", "Other"),
+    ("genshin impact topup mihoyo", "Other"),
+    ("free fire diamonds codashop garena", "Other"),
+    ("roblox robux roblox", "Other"),
+    ("xbox game pass microsoft xbox", "Other"),
+    ("nintendo switch game nintendo", "Other"),
+    ("sega game sega", "Other"),
+    ("mineski gaming internet cafe", "Other"),
+    ("net cafe gaming internet cafe", "Other"),
+    ("bgc concert events venue bgc", "Other"),
+    ("kpop merchandise kpop fan shop", "Other"),
+    ("concert ticket live nation", "Other"),
+    ("theater ticket cultural center", "Other"),
+    ("museum ticket national museum", "Other"),
+    ("theme park entrance enchanted kingdom", "Other"),
+    ("zoo entrance manila zoo", "Other"),
+    ("swimming entrance pool fee", "Other"),
+    ("bowling bowling alley", "Other"),
+    ("billiards pool hall", "Other"),
+    ("tuition university ateneo", "Other"),
+    ("tuition review center bar review", "Other"),
+    ("college fees enrollment fee", "Other"),
+    ("school project materials school", "Other"),
+    ("yearbook school yearbook", "Other"),
+    ("graduation fee commencement", "Other"),
+    ("ched scholarship application", "Other"),
+    ("western union remittance western union", "Other"),
+    ("cebuana lhuillier remittance cebuana", "Other"),
+    ("bayad center bills payment bayad", "Other"),
+    ("m lhuillier remittance mlhuillier", "Other"),
+    ("pet food pet supplies pet shop", "Other"),
+    ("veterinary vet clinic pet", "Other"),
+    ("pet grooming grooming salon", "Other"),
+    ("plant purchase garden center", "Other"),
+    ("house repair contractor renovation", "Other"),
+    ("paint hardware painting supplies", "Other"),
 ]
 
+
+# ── External data loader ──────────────────────────────────────────────────────
+
+def load_external_data() -> list[tuple[str, str]]:
+    """
+    Load supplementary training samples from JSONL and CSV files.
+
+    JSONL sources (each line: {"text": "...", "category": "..."}):
+      data/supplementary.jsonl  — user corrections appended by /retrain endpoint
+      data/supabase_export.jsonl — exported from Supabase by fetch_supabase.py
+
+    CSV sources (columns: Title, Category):
+      data/GASTOS_AI_10000_Clean_Dataset.csv — ~10k PH expense samples
+    """
+    samples = []
+
+    # ── JSONL sources ─────────────────────────────────────────────────────────
+    jsonl_sources = [
+        DATA_DIR / "supplementary.jsonl",
+        DATA_DIR / "supabase_export.jsonl",
+    ]
+    for path in jsonl_sources:
+        if not path.exists():
+            continue
+        loaded = 0
+        skipped = 0
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                    text     = (obj.get("text") or "").strip()
+                    category = (obj.get("category") or "").strip()
+                    if text and category in CATEGORIES:
+                        samples.append((text, category))
+                        loaded += 1
+                    else:
+                        skipped += 1
+                except json.JSONDecodeError:
+                    skipped += 1
+        print(f"  [{path.name}] loaded {loaded} samples" +
+              (f", skipped {skipped}" if skipped else ""))
+
+    # ── CSV sources ───────────────────────────────────────────────────────────
+    csv_sources = [
+        DATA_DIR / "GASTOS_AI_10000_Clean_Dataset.csv",
+    ]
+    for path in csv_sources:
+        if not path.exists():
+            continue
+        loaded = 0
+        skipped = 0
+        with open(path, encoding="utf-8") as f:
+            reader = _csv.DictReader(f)
+            for row in reader:
+                title    = (row.get("Title") or "").strip().lower()
+                category = (row.get("Category") or "").strip()
+                if title and category in CATEGORIES:
+                    samples.append((title, category))
+                    loaded += 1
+                else:
+                    skipped += 1
+        print(f"  [{path.name}] loaded {loaded} samples" +
+              (f", skipped {skipped}" if skipped else ""))
+
+    return samples
+
+
+# ── Text augmentation ─────────────────────────────────────────────────────────
+
+def augment(samples: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    """
+    Generate lightweight variants of each sample to improve robustness:
+      - ALL CAPS  (OCR output is often fully capitalized)
+      - hyphen → space  (e.g. "7-eleven" → "7 eleven")
+    Does NOT augment externally-loaded samples to avoid double-counting.
+    """
+    extras = []
+    seen = {text for text, _ in samples}
+    for text, label in samples:
+        upper = text.upper()
+        if upper not in seen:
+            extras.append((upper, label))
+            seen.add(upper)
+        dehyphen = text.replace("-", " ")
+        if dehyphen != text and dehyphen not in seen:
+            extras.append((dehyphen, label))
+            seen.add(dehyphen)
+    return samples + extras
+
+
+# ── Training ──────────────────────────────────────────────────────────────────
 
 def build_combined_text(samples):
     """Return list of raw text strings from (text, label) tuples."""
@@ -248,31 +544,54 @@ def build_combined_text(samples):
 
 
 def train():
-    texts = build_combined_text(TRAINING_DATA)
-    labels = [label for _, label in TRAINING_DATA]
+    print("Loading training data…")
+
+    # Merge hardcoded + external sources
+    external = load_external_data()
+    if external:
+        print(f"  External samples: {len(external)}")
+
+    # Deduplicate by text (external data may overlap with hardcoded)
+    seen_texts = {text for text, _ in TRAINING_DATA}
+    deduped_external = [(t, l) for t, l in external if t not in seen_texts]
+    all_samples = TRAINING_DATA + deduped_external
+
+    print(f"  Hardcoded samples : {len(TRAINING_DATA)}")
+    print(f"  External (unique) : {len(deduped_external)}")
+    print(f"  Total before aug  : {len(all_samples)}")
+
+    # Augment only the hardcoded samples to avoid amplifying noisy external data
+    augmented_hardcoded = augment(TRAINING_DATA)
+    all_samples = augmented_hardcoded + deduped_external
+    print(f"  Total after aug   : {len(all_samples)}")
+
+    texts  = build_combined_text(all_samples)
+    labels = [label for _, label in all_samples]
 
     # ── TF-IDF + Random Forest pipeline ──────────────────────────────────────
     pipeline = Pipeline([
         ("tfidf", TfidfVectorizer(
-            ngram_range=(1, 3),       # unigrams, bigrams, trigrams
+            ngram_range=(1, 3),
             min_df=1,
-            max_features=5000,
-            sublinear_tf=True,        # log normalization (handles frequency skew)
+            max_features=8000,          # increased to handle larger vocabulary
+            sublinear_tf=True,
             analyzer="word",
+            strip_accents="unicode",    # normalize Filipino diacritics (e.g. "ñ")
+            token_pattern=r"\b\w+\b",   # include digits/alphanumeric (e.g. "7-eleven" tokens)
         )),
         ("rf", RandomForestClassifier(
-            n_estimators=300,         # more trees = more stable probabilities
-            max_depth=None,           # let trees grow fully on small dataset
+            n_estimators=400,           # more trees for the larger dataset
+            max_depth=None,
             min_samples_split=2,
             min_samples_leaf=1,
-            class_weight="balanced",  # handles category imbalance
+            class_weight="balanced",
             random_state=42,
             n_jobs=-1,
         )),
     ])
 
     # ── Cross-validation score ────────────────────────────────────────────────
-    print("Running 5-fold cross-validation…")
+    print("\nRunning 5-fold cross-validation…")
     cv_scores = cross_val_score(pipeline, texts, labels, cv=5, scoring="accuracy")
     print(f"  CV accuracy: {cv_scores.mean():.3f} ± {cv_scores.std():.3f}")
 
@@ -288,10 +607,10 @@ def train():
     print(classification_report(y_test, y_pred, target_names=CATEGORIES))
 
     # ── Feature importances (top 20) ─────────────────────────────────────────
-    rf = pipeline.named_steps["rf"]
-    tfidf = pipeline.named_steps["tfidf"]
+    rf      = pipeline.named_steps["rf"]
+    tfidf   = pipeline.named_steps["tfidf"]
     feature_names = tfidf.get_feature_names_out()
-    importances = rf.feature_importances_
+    importances   = rf.feature_importances_
     top_idx = np.argsort(importances)[::-1][:20]
     print("\nTop 20 most important features:")
     for i, idx in enumerate(top_idx):
@@ -303,7 +622,6 @@ def train():
     joblib.dump(pipeline, model_path)
     print(f"\nModel saved → {model_path}")
 
-    # Save category list alongside model (for validation in API)
     meta_path = os.path.join("model", "categories.json")
     with open(meta_path, "w") as f:
         json.dump({"categories": CATEGORIES}, f)

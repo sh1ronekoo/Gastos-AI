@@ -4,20 +4,29 @@
  * POST { title: string, merchantName?: string }
  * → { category, confidence, source: "ml" }
  *
- * Primary: Random Forest via FastAPI (real ML)
- * Fallback: TS keyword classifier (if RF unreachable)
+ * Tier 1 (optional): Random Forest via FastAPI — only used when RF_SERVICE_URL is set
+ * Tier 2: TS keyword classifier (instant, no network)
+ * Tier 3: Gemini API — used when keyword confidence < threshold
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { classify, type ExpenseCategory } from "@/lib/ml-categorizer";
+import { GoogleGenerativeAI } from "@google/generative-ai";
+import { classify, ML_THRESHOLD, type ExpenseCategory } from "@/lib/ml-categorizer";
+import lookup from "@/lib/expense-lookup.json";
 
 const VALID_CATEGORIES: ExpenseCategory[] = [
   "Food", "Transport", "Utilities", "Shopping", "Health", "Other",
 ];
 
-const RF_SERVICE_URL = process.env.RF_SERVICE_URL ?? "http://localhost:8000";
+const RF_SERVICE_URL = process.env.RF_SERVICE_URL;          // undefined → skip RF
 const RF_API_KEY     = process.env.RF_API_KEY ?? "";
-const RF_TIMEOUT_MS  = Number(process.env.RF_TIMEOUT_MS ?? "8000");
+const RF_TIMEOUT_MS  = Number(process.env.RF_TIMEOUT_MS ?? "3000");
+
+const GEMINI_MODELS = [
+  "models/gemini-3.1-flash-lite",
+  "models/gemini-3.0-flash",
+  "models/gemini-2.5-flash",
+];
 
 export async function POST(req: NextRequest) {
   try {
@@ -32,25 +41,64 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // ── Primary: Random Forest ───────────────────────────────────────────────
-    const rfResult = await callRFService(title, merchantName);
-
-    if (rfResult) {
+    // ── Tier 0: Static CSV lookup (10k Philippine expense titles) ────────────
+    const normalizedInput = normalizeForLookup(`${title} ${merchantName}`.trim());
+    const csvLookup = lookup as Record<string, string>;
+    const directHit = csvLookup[normalizedInput];
+    if (directHit && VALID_CATEGORIES.includes(directHit as ExpenseCategory)) {
       return NextResponse.json({
-        category:   rfResult.category,
-        confidence: rfResult.confidence,
+        category:   directHit as ExpenseCategory,
+        confidence: 0.95,
         source:     "ml" as const,
-        allScores:  rfResult.allScores,
+        allScores:  null,
+      });
+    }
+    // Substring match: lookup key must be ≥ 8 chars and appear as a complete phrase
+    const subEntry = Object.entries(csvLookup).find(([key]) => {
+      if (key.length < 8) return false;
+      const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      return new RegExp(`(?:^|\\s)${escaped}(?:\\s|$)`).test(normalizedInput);
+    });
+    if (subEntry && VALID_CATEGORIES.includes(subEntry[1] as ExpenseCategory)) {
+      return NextResponse.json({
+        category:   subEntry[1] as ExpenseCategory,
+        confidence: 0.90,
+        source:     "ml" as const,
+        allScores:  null,
       });
     }
 
-    // ── Fallback: TS keyword classifier (RF unreachable) ────────────────────
-    const rulesResult = classify(title, merchantName);
+    // ── Tier 1: Random Forest (only when RF_SERVICE_URL is explicitly set) ───
+    if (RF_SERVICE_URL) {
+      const rfResult = await callRFService(title, merchantName);
+      if (rfResult) {
+        return NextResponse.json({
+          category:   rfResult.category,
+          confidence: rfResult.confidence,
+          source:     "ml" as const,
+          allScores:  rfResult.allScores,
+        });
+      }
+    }
+
+    // ── Tier 2: TS keyword classifier ───────────────────────────────────────
+    const tsResult = classify(title, merchantName);
+    if (tsResult.confidence >= ML_THRESHOLD) {
+      return NextResponse.json({
+        category:   tsResult.category,
+        confidence: tsResult.confidence,
+        source:     "ml" as const,
+        allScores:  tsResult.allScores,
+      });
+    }
+
+    // ── Tier 3: Gemini (low-confidence fallback) ─────────────────────────────
+    const geminiCategory = await classifyWithGemini(title, merchantName);
     return NextResponse.json({
-      category:   rulesResult.category,
-      confidence: rulesResult.confidence,
+      category:   geminiCategory,
+      confidence: 0.85,
       source:     "ml" as const,
-      allScores:  rulesResult.allScores,
+      allScores:  null,
     });
 
   } catch (err) {
@@ -97,4 +145,48 @@ async function callRFService(
   } catch {
     return null;
   }
+}
+
+function normalizeForLookup(text: string): string {
+  return text
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s\-/&'.]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+async function classifyWithGemini(
+  title: string,
+  merchantName: string
+): Promise<ExpenseCategory> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) return "Other";
+
+  const prompt = `Classify this Philippine expense into exactly one category.
+Title: "${title}"${merchantName ? `\nMerchant: "${merchantName}"` : ""}
+Categories: Food, Transport, Utilities, Shopping, Health, Other
+Reply with only the category name, nothing else.`;
+
+  const genAI = new GoogleGenerativeAI(apiKey);
+
+  for (const modelName of GEMINI_MODELS) {
+    try {
+      const model  = genAI.getGenerativeModel({ model: modelName });
+      const result = await model.generateContent(prompt);
+      const text    = result.response.text().trim();
+      const cleaned = text.replace(/[^a-zA-Z]/g, "").toLowerCase();
+
+      const matched =
+        VALID_CATEGORIES.find((c) => c.toLowerCase() === cleaned) ??
+        VALID_CATEGORIES.find((c) => cleaned.includes(c.toLowerCase())) ??
+        VALID_CATEGORIES.find((c) => text.toLowerCase().startsWith(c.toLowerCase()));
+
+      if (matched) return matched as ExpenseCategory;
+    } catch {
+      continue;
+    }
+  }
+
+  return "Other";
 }
