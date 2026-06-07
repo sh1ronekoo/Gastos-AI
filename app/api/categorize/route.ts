@@ -174,13 +174,15 @@ Reply with only the category name, nothing else.`;
     try {
       const model  = genAI.getGenerativeModel({ model: modelName });
       const result = await model.generateContent(prompt);
-      const text   = result.response.text().trim();
+      const text    = result.response.text().trim();
+      const cleaned = text.replace(/[^a-zA-Z]/g, "").toLowerCase();
 
-      const matched = VALID_CATEGORIES.find(
-        (c) => c.toLowerCase() === text.toLowerCase()
-      ) as ExpenseCategory | undefined;
+      const matched =
+        VALID_CATEGORIES.find((c) => c.toLowerCase() === cleaned) ??
+        VALID_CATEGORIES.find((c) => cleaned.includes(c.toLowerCase())) ??
+        VALID_CATEGORIES.find((c) => text.toLowerCase().startsWith(c.toLowerCase()));
 
-      if (matched) return matched;
+      if (matched) return matched as ExpenseCategory;
     } catch {
       continue;
     }
