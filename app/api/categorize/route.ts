@@ -19,7 +19,7 @@ const VALID_CATEGORIES: ExpenseCategory[] = [
 
 const RF_SERVICE_URL = process.env.RF_SERVICE_URL;          // undefined → skip RF
 const RF_API_KEY     = process.env.RF_API_KEY ?? "";
-const RF_TIMEOUT_MS  = Number(process.env.RF_TIMEOUT_MS ?? "8000");
+const RF_TIMEOUT_MS  = Number(process.env.RF_TIMEOUT_MS ?? "3000");
 
 const GEMINI_MODELS = [
   "models/gemini-3.1-flash-lite",
