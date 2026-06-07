@@ -339,6 +339,7 @@ export default function PrototypePage() {
   const [catState, setCatState] = useState<CategorizationState>({ status: "idle" });
   const [categorizationSource, setCategorizationSource] = useState<"ml" | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const catAbortRef = useRef<AbortController | null>(null);
   const userOverrideRef = useRef(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -409,6 +410,13 @@ export default function PrototypePage() {
 
   const triggerCategorization = useCallback((newTitle: string, newMerchant: string) => {
     if (userOverrideRef.current) return;
+
+    // Abort any in-flight categorization request immediately
+    if (catAbortRef.current) {
+      catAbortRef.current.abort();
+      catAbortRef.current = null;
+    }
+
     if (!newTitle.trim() && !newMerchant.trim()) {
       setCatState({ status: "idle" });
       return;
@@ -417,12 +425,16 @@ export default function PrototypePage() {
     if (debounceRef.current) clearTimeout(debounceRef.current);
 
     debounceRef.current = setTimeout(async () => {
+      const controller = new AbortController();
+      catAbortRef.current = controller;
+
       setCatState({ status: "loading" });
       try {
         const res = await fetch("/api/categorize", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ title: newTitle, merchantName: newMerchant }),
+          signal: controller.signal,
         });
         if (!res.ok) throw new Error("categorize failed");
         const data = await res.json();
@@ -433,7 +445,8 @@ export default function PrototypePage() {
           setCategorizationSource("ml");
           setCatState({ status: "done", category: data.category, confidence: data.confidence, source: "ml" });
         }
-      } catch {
+      } catch (err) {
+        if ((err as Error).name === "AbortError") return;
         setCatState({ status: "error" });
       }
     }, 600);
