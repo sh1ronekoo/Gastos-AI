@@ -1015,6 +1015,11 @@ export default function PrototypePage() {
         .confidence-pop { animation: popIn 0.25s cubic-bezier(0.22,1,0.36,1); }
         .cat-highlight { box-shadow: 0 0 0 2px rgba(20,184,166,0.35); transition: box-shadow 0.3s; }
 
+        /* Let grids (and their children) shrink inside the column flex wrapper so
+           tracks can collapse instead of overflowing the viewport on mobile. */
+        .dash-cols-4, .dash-cols-main { min-width: 0; }
+        .dash-cols-4 > *, .dash-cols-main > * { min-width: 0; }
+
         @media (max-width: 900px) {
           .dash-cols-4 { grid-template-columns: 1fr 1fr !important; }
           .dash-cols-main { grid-template-columns: 1fr !important; }
@@ -1028,9 +1033,11 @@ export default function PrototypePage() {
           .rec-amount { font-size: 0.78rem !important; }
           .del-label { display: none !important; }
           .del-icon { display: inline !important; }
-          .rec-meta { flex-wrap: nowrap !important; overflow: hidden; max-width: 100%; }
-          .rec-meta span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 80px; }
-          .rec-expand { display: none !important; }
+          .rec-meta { flex-wrap: wrap !important; gap: 0.2rem !important; overflow: visible; max-width: 100%; }
+          .rec-search-wrap { flex-direction: column !important; width: 100% !important; }
+          .rec-search-input-wrap { width: 100% !important; }
+          .rec-search-input-wrap .dash-input { width: 100% !important; }
+          .rec-filter-wrap { width: 100% !important; }
         }
       `}</style>
 
@@ -1338,12 +1345,12 @@ export default function PrototypePage() {
                   {filteredExpenses.length !== expenses.length ? `Showing ${filteredExpenses.length} of ${expenses.length}` : `${expenses.length} total`}
                 </p>
               </div>
-              <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-                <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
+              <div className="rec-search-wrap" style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                <div className="rec-search-input-wrap" style={{ position: "relative", display: "flex", alignItems: "center" }}>
                   <span style={{ position: "absolute", left: "0.7rem", pointerEvents: "none" }}><IconSearch size={14} color={txMute} /></span>
                   <input className="dash-input" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Search…" style={{ ...inputBase, width: 150, paddingLeft: "2.1rem" }} />
                 </div>
-                <div style={{ width: 140 }}>
+                <div className="rec-filter-wrap" style={{ width: 140 }}>
                   <CategoryDropdown value={selectedCategory} onChange={v => setSelectedCategory(v as ExpenseCategory | "All")} open={filterDropdownOpen} setOpen={setFilterDropdownOpen} dropRef={filterDropdownRef} filterMode />
                 </div>
               </div>

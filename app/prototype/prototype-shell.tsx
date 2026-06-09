@@ -229,7 +229,9 @@ export default function PrototypeShell({ children }: { children: ReactNode }) {
 
           @media (max-width: 768px) {
             .desktop-sidebar { display: none !important; }
-            .proto-content   { margin-left: 0 !important; }
+            .proto-content   { margin-left: 0 !important; padding-top: 58px; }
+            .proto-page-header { padding: 0.6rem 1rem !important; }
+            .proto-page-body   { padding: 1rem 1rem 3rem !important; }
           }
           @media (min-width: 769px) {
             .mobile-topbar { display: none !important; }
@@ -392,7 +394,7 @@ export default function PrototypeShell({ children }: { children: ReactNode }) {
             marginLeft: sideW, flex: 1, minHeight: "100vh", overflowY: "auto",
             transition: "margin-left 0.25s cubic-bezier(0.22,1,0.36,1)", position: "relative", zIndex: 1,
           }}>
-            <div style={{
+            <div className="proto-page-header" style={{
               position: "sticky", top: 0, zIndex: 20,
               background: isDark ? "rgba(7,9,15,0.88)" : "rgba(241,245,249,0.9)",
               backdropFilter: "blur(16px)", borderBottom: `1px solid ${border}`,
@@ -412,7 +414,7 @@ export default function PrototypeShell({ children }: { children: ReactNode }) {
                 {new Date().toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })}
               </div>
             </div>
-            <div style={{ maxWidth: 1200, margin: "0 auto", padding: "1.5rem 1.75rem 3rem" }}>
+            <div className="proto-page-body" style={{ maxWidth: 1200, margin: "0 auto", padding: "1.5rem 1.75rem 3rem" }}>
               {children}
             </div>
           </main>
