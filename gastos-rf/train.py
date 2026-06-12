@@ -18,6 +18,7 @@ import csv as _csv
 import json
 import joblib
 import numpy as np
+from collections import Counter
 from pathlib import Path
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -444,31 +445,60 @@ TRAINING_DATA = [
 ]
 
 
+# ── Text combiner (mirrors _combine_inputs in categorizer.py) ─────────────────
+
+def combine_text(title: str, merchant: str = "") -> str:
+    """
+    Build the training text from a title + optional merchant, the SAME way
+    categorizer.py::_combine_inputs does at inference time (merchant repeated
+    for ~2x weight). Keeping these in sync means the model trains on the same
+    text shape it will see in production.
+    """
+    title_clean    = (title or "").strip().lower()
+    merchant_clean = (merchant or "").strip().lower()
+    if merchant_clean:
+        return f"{title_clean} {merchant_clean} {merchant_clean}"
+    return title_clean
+
+
 # ── External data loader ──────────────────────────────────────────────────────
 
 def load_external_data() -> list[tuple[str, str]]:
     """
-    Load supplementary training samples from JSONL and CSV files.
+    Load supplementary training samples from JSONL and CSV files, de-duplicated
+    by lowercased text. Returns a list of (text, category) tuples.
 
     JSONL sources (each line: {"text": "...", "category": "..."}):
-      data/supplementary.jsonl  — user corrections appended by /retrain endpoint
+      data/supplementary.jsonl   — user corrections appended by /retrain endpoint
       data/supabase_export.jsonl — exported from Supabase by fetch_supabase.py
 
-    CSV sources (columns: Title, Category):
-      data/GASTOS_AI_10000_Clean_Dataset.csv — ~10k PH expense samples
+    CSV sources (columns: Title, [Merchant,] Category):
+      data/GASTOS_AI_10000_Clean_Dataset.csv — PH expense samples
     """
-    samples = []
+    samples: list[tuple[str, str]] = []
+    text_to_cat: dict[str, str] = {}
+    conflicts = 0
+
+    def add(text: str, category: str) -> str:
+        """Returns 'added' | 'dupe' | 'conflict' | 'skip'."""
+        nonlocal conflicts
+        text = text.strip()
+        if not text or category not in CATEGORIES:
+            return "skip"
+        if text in text_to_cat:
+            if text_to_cat[text] != category:
+                conflicts += 1
+                return "conflict"
+            return "dupe"
+        text_to_cat[text] = category
+        samples.append((text, category))
+        return "added"
 
     # ── JSONL sources ─────────────────────────────────────────────────────────
-    jsonl_sources = [
-        DATA_DIR / "supplementary.jsonl",
-        DATA_DIR / "supabase_export.jsonl",
-    ]
-    for path in jsonl_sources:
+    for path in (DATA_DIR / "supplementary.jsonl", DATA_DIR / "supabase_export.jsonl"):
         if not path.exists():
             continue
-        loaded = 0
-        skipped = 0
+        added = dupes = skipped = 0
         with open(path, encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
@@ -476,97 +506,80 @@ def load_external_data() -> list[tuple[str, str]]:
                     continue
                 try:
                     obj = json.loads(line)
-                    text     = (obj.get("text") or "").strip()
-                    category = (obj.get("category") or "").strip()
-                    if text and category in CATEGORIES:
-                        samples.append((text, category))
-                        loaded += 1
-                    else:
-                        skipped += 1
                 except json.JSONDecodeError:
                     skipped += 1
-        print(f"  [{path.name}] loaded {loaded} samples" +
-              (f", skipped {skipped}" if skipped else ""))
+                    continue
+                res = add(combine_text(obj.get("text", "")),
+                          (obj.get("category") or "").strip())
+                if   res == "added": added += 1
+                elif res == "dupe":  dupes += 1
+                else:                skipped += 1
+        print(f"  [{path.name}] {added} unique"
+              + (f", {dupes} duplicates dropped" if dupes else "")
+              + (f", {skipped} skipped" if skipped else ""))
 
-    # ── CSV sources ───────────────────────────────────────────────────────────
-    csv_sources = [
-        DATA_DIR / "GASTOS_AI_10000_Clean_Dataset.csv",
-    ]
-    for path in csv_sources:
-        if not path.exists():
-            continue
-        loaded = 0
-        skipped = 0
+    # ── CSV sources (columns: Title, optional Merchant, Category) ──────────────
+    # Auto-discover every *.csv in data/ so new datasets just need to be dropped in.
+    for path in sorted(DATA_DIR.glob("*.csv")):
+        rows = added = dupes = skipped = 0
         with open(path, encoding="utf-8") as f:
             reader = _csv.DictReader(f)
             for row in reader:
-                title    = (row.get("Title") or "").strip().lower()
-                category = (row.get("Category") or "").strip()
-                if title and category in CATEGORIES:
-                    samples.append((title, category))
-                    loaded += 1
-                else:
-                    skipped += 1
-        print(f"  [{path.name}] loaded {loaded} samples" +
-              (f", skipped {skipped}" if skipped else ""))
+                rows += 1
+                text = combine_text(row.get("Title", ""), row.get("Merchant", ""))
+                res = add(text, (row.get("Category") or "").strip())
+                if   res == "added": added += 1
+                elif res == "dupe":  dupes += 1
+                else:                skipped += 1
+        print(f"  [{path.name}] {rows} rows -> {added} unique "
+              f"({dupes} duplicates dropped"
+              + (f", {skipped} skipped" if skipped else "") + ")")
+
+    if conflicts:
+        print(f"  WARNING: {conflicts} rows had a text already labeled "
+              f"differently (kept the first label)")
 
     return samples
 
 
-# ── Text augmentation ─────────────────────────────────────────────────────────
-
-def augment(samples: list[tuple[str, str]]) -> list[tuple[str, str]]:
-    """
-    Generate lightweight variants of each sample to improve robustness:
-      - ALL CAPS  (OCR output is often fully capitalized)
-      - hyphen → space  (e.g. "7-eleven" → "7 eleven")
-    Does NOT augment externally-loaded samples to avoid double-counting.
-    """
-    extras = []
-    seen = {text for text, _ in samples}
-    for text, label in samples:
-        upper = text.upper()
-        if upper not in seen:
-            extras.append((upper, label))
-            seen.add(upper)
-        dehyphen = text.replace("-", " ")
-        if dehyphen != text and dehyphen not in seen:
-            extras.append((dehyphen, label))
-            seen.add(dehyphen)
-    return samples + extras
-
-
 # ── Training ──────────────────────────────────────────────────────────────────
 
-def build_combined_text(samples):
-    """Return list of raw text strings from (text, label) tuples."""
-    return [text for text, _ in samples]
-
-
 def train():
-    print("Loading training data…")
+    print("Loading training data...")
 
-    # Merge hardcoded + external sources
     external = load_external_data()
-    if external:
-        print(f"  External samples: {len(external)}")
 
-    # Deduplicate by text (external data may overlap with hardcoded)
-    seen_texts = {text for text, _ in TRAINING_DATA}
-    deduped_external = [(t, l) for t, l in external if t not in seen_texts]
-    all_samples = TRAINING_DATA + deduped_external
+    # ── Merge hardcoded + external, de-duplicate globally by lowercased text ──
+    # Exact duplicates are dropped so the same phrase can't land in both the
+    # train and test split below. (The old pipeline kept ~82% duplicate CSV
+    # rows and split randomly, which leaked memorized rows into the held-out set
+    # and inflated the reported accuracy to a meaningless 1.00.)
+    # Note: the TF-IDF vectorizer lowercases anyway, so the old CAPS / de-hyphen
+    # augmentation produced feature-identical rows — it was pure duplication and
+    # has been removed.
+    combined: dict[str, str] = {}
+    for text, label in TRAINING_DATA:
+        key = text.strip().lower()
+        if key:
+            combined.setdefault(key, label)
+    hardcoded_unique = len(combined)
 
-    print(f"  Hardcoded samples : {len(TRAINING_DATA)}")
-    print(f"  External (unique) : {len(deduped_external)}")
-    print(f"  Total before aug  : {len(all_samples)}")
+    ext_added = 0
+    for text, label in external:
+        key = text.strip().lower()
+        if key and key not in combined:
+            combined[key] = label
+            ext_added += 1
 
-    # Augment only the hardcoded samples to avoid amplifying noisy external data
-    augmented_hardcoded = augment(TRAINING_DATA)
-    all_samples = augmented_hardcoded + deduped_external
-    print(f"  Total after aug   : {len(all_samples)}")
+    texts  = list(combined.keys())
+    labels = list(combined.values())
 
-    texts  = build_combined_text(all_samples)
-    labels = [label for _, label in all_samples]
+    dist = Counter(labels)
+    print(f"  Hardcoded (unique)        : {hardcoded_unique}")
+    print(f"  External added (new)      : {ext_added}")
+    print(f"  Total unique training set : {len(texts)}")
+    print("  Class distribution        : "
+          + ", ".join(f"{c}={dist.get(c, 0)}" for c in CATEGORIES))
 
     # ── TF-IDF + Random Forest pipeline ──────────────────────────────────────
     pipeline = Pipeline([
@@ -590,10 +603,10 @@ def train():
         )),
     ])
 
-    # ── Cross-validation score ────────────────────────────────────────────────
-    print("\nRunning 5-fold cross-validation…")
+    # ── Cross-validation score (on de-duplicated data) ───────────────────────
+    print("\nRunning 5-fold cross-validation...")
     cv_scores = cross_val_score(pipeline, texts, labels, cv=5, scoring="accuracy")
-    print(f"  CV accuracy: {cv_scores.mean():.3f} ± {cv_scores.std():.3f}")
+    print(f"  CV accuracy: {cv_scores.mean():.3f} +/- {cv_scores.std():.3f}")
 
     # ── Train on full dataset ─────────────────────────────────────────────────
     X_train, X_test, y_train, y_test = train_test_split(
@@ -601,10 +614,14 @@ def train():
     )
     pipeline.fit(X_train, y_train)
 
-    # ── Evaluation ────────────────────────────────────────────────────────────
+    # ── Evaluation (leakage-free: no duplicate text spans the split) ──────────
     y_pred = pipeline.predict(X_test)
-    print("\nClassification report (held-out 15%):")
-    print(classification_report(y_test, y_pred, target_names=CATEGORIES))
+    print("\nClassification report (held-out 15%, leakage-free):")
+    # labels= pins the row order to CATEGORIES; without it classification_report
+    # sorts labels alphabetically and the target_names would mislabel the rows.
+    print(classification_report(
+        y_test, y_pred, labels=CATEGORIES, target_names=CATEGORIES, zero_division=0
+    ))
 
     # ── Feature importances (top 20) ─────────────────────────────────────────
     rf      = pipeline.named_steps["rf"]
@@ -620,12 +637,12 @@ def train():
     os.makedirs("model", exist_ok=True)
     model_path = os.path.join("model", "rf_categorizer.joblib")
     joblib.dump(pipeline, model_path)
-    print(f"\nModel saved → {model_path}")
+    print(f"\nModel saved -> {model_path}")
 
     meta_path = os.path.join("model", "categories.json")
     with open(meta_path, "w") as f:
         json.dump({"categories": CATEGORIES}, f)
-    print(f"Metadata saved → {meta_path}")
+    print(f"Metadata saved -> {meta_path}")
 
     return pipeline
 
