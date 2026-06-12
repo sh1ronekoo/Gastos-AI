@@ -4,15 +4,16 @@
  * POST { title: string, merchantName?: string }
  * → { category, confidence, source: "ml" }
  *
- * Tier 1 (optional): Random Forest via FastAPI — only used when RF_SERVICE_URL is set
- * Tier 2: TS keyword classifier (instant, no network)
- * Tier 3: Gemini API — used when keyword confidence < threshold
+ * Cascade (first confident answer wins):
+ *   1. Random Forest  — primary classifier (the real trained model), when
+ *                       RF_SERVICE_URL is set; used whenever it clears RF_MIN_CONFIDENCE
+ *   2. TS keyword     — offline fallback when RF is unsure/unreachable
+ *   3. Gemini API     — final low-confidence fallback
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { classify, ML_THRESHOLD, type ExpenseCategory } from "@/lib/ml-categorizer";
-import lookup from "@/lib/expense-lookup";
 
 const VALID_CATEGORIES: ExpenseCategory[] = [
   "Food", "Transport", "Utilities", "Shopping", "Health", "Other",
@@ -21,6 +22,7 @@ const VALID_CATEGORIES: ExpenseCategory[] = [
 const RF_SERVICE_URL = process.env.RF_SERVICE_URL;          // undefined → skip RF
 const RF_API_KEY     = process.env.RF_API_KEY ?? "";
 const RF_TIMEOUT_MS  = Number(process.env.RF_TIMEOUT_MS ?? "3000");
+const RF_MIN_CONFIDENCE = Number(process.env.RF_MIN_CONFIDENCE ?? "0.52"); // below this, defer to fallback tiers
 
 const GEMINI_MODELS = [
   "models/gemini-3.1-flash-lite",
@@ -41,37 +43,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // ── Tier 0: Static CSV lookup (10k Philippine expense titles) ────────────
-    const normalizedInput = normalizeForLookup(`${title} ${merchantName}`.trim());
-    const csvLookup = lookup as Record<string, string>;
-    const directHit = csvLookup[normalizedInput];
-    if (directHit && VALID_CATEGORIES.includes(directHit as ExpenseCategory)) {
-      return NextResponse.json({
-        category:   directHit as ExpenseCategory,
-        confidence: 0.95,
-        source:     "ml" as const,
-        allScores:  null,
-      });
-    }
-    // Substring match: lookup key must be ≥ 8 chars and appear as a complete phrase
-    const subEntry = Object.entries(csvLookup).find(([key]) => {
-      if (key.length < 8) return false;
-      const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      return new RegExp(`(?:^|\\s)${escaped}(?:\\s|$)`).test(normalizedInput);
-    });
-    if (subEntry && VALID_CATEGORIES.includes(subEntry[1] as ExpenseCategory)) {
-      return NextResponse.json({
-        category:   subEntry[1] as ExpenseCategory,
-        confidence: 0.90,
-        source:     "ml" as const,
-        allScores:  null,
-      });
-    }
-
-    // ── Tier 1: Random Forest (only when RF_SERVICE_URL is explicitly set) ───
+    // ── Tier 1: Random Forest — primary classifier (the real trained model) ──
+    // Handles every input it is confident about; only genuinely uncertain or
+    // unreachable cases fall through to the resilience fallbacks below.
     if (RF_SERVICE_URL) {
       const rfResult = await callRFService(title, merchantName);
-      if (rfResult) {
+      if (rfResult && rfResult.confidence >= RF_MIN_CONFIDENCE) {
         return NextResponse.json({
           category:   rfResult.category,
           confidence: rfResult.confidence,
@@ -81,7 +58,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // ── Tier 2: TS keyword classifier ───────────────────────────────────────
+    // ── Tier 2: TS keyword classifier (offline fallback) ─────────────────────
     const tsResult = classify(title, merchantName);
     if (tsResult.confidence >= ML_THRESHOLD) {
       return NextResponse.json({
@@ -145,15 +122,6 @@ async function callRFService(
   } catch {
     return null;
   }
-}
-
-function normalizeForLookup(text: string): string {
-  return text
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9\s\-/&'.]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
 }
 
 async function classifyWithGemini(
