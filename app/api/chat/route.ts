@@ -1,4 +1,6 @@
+// app/api/chat/route.ts
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { supabaseAdmin } from "@/lib/supabase-server";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
@@ -51,10 +53,14 @@ ${expenseList || "No expenses recorded yet."}
 - Be concise but friendly. Avoid unnecessary disclaimers.`;
 }
 
-async function runChat(modelName: string, messages: any[], systemPrompt: string) {
+async function runChat(
+  modelName: string,
+  messages: any[],
+  systemPrompt: string
+) {
   const model = genAI.getGenerativeModel({
     model: modelName,
-    systemInstruction: systemPrompt, // ← inject data here
+    systemInstruction: systemPrompt,
   });
 
   const chat = model.startChat({
@@ -69,18 +75,32 @@ async function runChat(modelName: string, messages: any[], systemPrompt: string)
   return result.response.text();
 }
 
+// Generate a short title from the first user message
+function generateTitle(firstMessage: string): string {
+  return firstMessage.length > 50
+    ? firstMessage.slice(0, 47) + "…"
+    : firstMessage;
+}
+
 export async function POST(req: Request) {
   try {
-    const { messages, expenses = [], budget = "10000" } = await req.json(); // ← receive expenses & budget
+    const {
+      messages,
+      expenses = [],
+      budget = "10000",
+      sessionId,
+      userId,
+      isFirstMessage = false,
+    } = await req.json();
 
     const systemPrompt = buildSystemPrompt(expenses, budget);
-
     let lastError: any;
+    let reply = "";
 
     for (const model of MODELS) {
       try {
-        const reply = await runChat(model, messages, systemPrompt);
-        return Response.json({ reply, modelUsed: model });
+        reply = await runChat(model, messages, systemPrompt);
+        break;
       } catch (err: any) {
         lastError = err;
         if (err?.status === 503 || err?.status === 429) continue;
@@ -88,7 +108,36 @@ export async function POST(req: Request) {
       }
     }
 
-    throw lastError;
+    if (!reply) throw lastError;
+
+    // ── Persist to Supabase if we have a session ──────────────
+    if (sessionId && userId) {
+      const userMessage = messages[messages.length - 1];
+
+      // If this is the first message, update the session title
+      if (isFirstMessage) {
+        await supabaseAdmin
+          .from("chat_sessions")
+          .update({ title: generateTitle(userMessage.content) })
+          .eq("id", sessionId);
+      }
+
+      // Save the user message
+      await supabaseAdmin.from("chat_messages").insert({
+        session_id: sessionId,
+        role: "user",
+        content: userMessage.content,
+      });
+
+      // Save the assistant reply
+      await supabaseAdmin.from("chat_messages").insert({
+        session_id: sessionId,
+        role: "assistant",
+        content: reply,
+      });
+    }
+
+    return Response.json({ reply });
   } catch (error: any) {
     console.error("Chat API error:", error);
     return Response.json(
