@@ -3,7 +3,8 @@
 import type { FormEvent } from "react";
 import { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
-import { usePrototypeTheme } from "./prototype-shell";
+import { usePrototypeTheme, useCurrency } from "./prototype-shell";
+import { CURRENCIES, type CurrencyCode } from "@/lib/currency";
 
 type ExpenseCategory = "Food" | "Transport" | "Utilities" | "Shopping" | "Health" | "Other";
 type Expense = {
@@ -41,7 +42,6 @@ type CategorizationState =
   | { status: "error" };
 
 const categories: ExpenseCategory[] = ["Food", "Transport", "Utilities", "Shopping", "Health", "Other"];
-const pesoFormatter = new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" });
 
 const CATEGORY_COLORS: Record<ExpenseCategory, string> = {
   Food: "#14b8a6", Transport: "#6366f1", Utilities: "#fb923c",
@@ -57,6 +57,50 @@ const INCOME_CATEGORY_COLORS: Record<IncomeCategory, string> = {
 };
 
 const RECORDS_PER_PAGE = 8;
+
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function escapeCsvCell(value: string): string {
+  return `"${String(value).replace(/"/g, '""')}"`;
+}
+
+function exportExpensesToCsv(rows: Expense[]) {
+  const delimiter = ",";
+  const headers = ["Date", "Title", "Category", "Merchant", "Amount (PHP)", "Notes", "Scan Source", "Auto Categorized", "Receipt URL"];
+
+  const toRow = (cells: string[]) => cells.map(escapeCsvCell).join(delimiter);
+
+  const dataRows = rows.map((item) => {
+    const date = item.created_at
+      ? new Date(item.created_at).toLocaleDateString("en-CA")
+      : "";
+    return toRow([
+      date,
+      item.title,
+      item.category,
+      item.merchant_name ?? "",
+      Number(item.amount).toFixed(2),
+      item.notes ?? "",
+      item.scan_source ?? "",
+      item.auto_categorized || item.categorization_source === "ml" ? "Yes" : "No",
+      item.receipt_image_url ?? "",
+    ]);
+  });
+
+  // sep= line helps Excel split columns correctly on all regional settings
+  const lines = [`sep=${delimiter}`, toRow(headers), ...dataRows];
+  const blob = new Blob([`\uFEFF${lines.join("\r\n")}`], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `gastos-expenses-${new Date().toISOString().slice(0, 10)}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
 
 // ── SVG icon components ──────────────────────────────────────
 function IconFood({ size = 18, color = "currentColor" }: { size?: number; color?: string }) {
@@ -151,6 +195,24 @@ function IconUpload({ size = 18, color = "currentColor" }: { size?: number; colo
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <polyline points="16 16 12 12 8 16" /><line x1="12" y1="12" x2="12" y2="21" />
       <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3" />
+    </svg>
+  );
+}
+function IconDownload({ size = 18, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="7 10 12 15 17 10" />
+      <line x1="12" y1="15" x2="12" y2="3" />
+    </svg>
+  );
+}
+function IconCalendar({ size = 18, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+      <line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" />
+      <line x1="3" y1="10" x2="21" y2="10" />
     </svg>
   );
 }
@@ -457,6 +519,7 @@ function Pagination({
 
 export default function PrototypePage() {
   const { isDark } = usePrototypeTheme();
+  const { formatMoney, currency, setCurrency } = useCurrency();
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loadingData, setLoadingData] = useState(true);
   const [title, setTitle] = useState("");
@@ -475,8 +538,13 @@ export default function PrototypePage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [categoryDropdownOpen, setCategoryDropdownOpen] = useState(false);
   const [filterDropdownOpen, setFilterDropdownOpen] = useState(false);
+  const [monthPickerOpen, setMonthPickerOpen] = useState(false);
+  const [pickerYear, setPickerYear] = useState(() => new Date().getFullYear());
+  const [selectedMonth, setSelectedMonth] = useState<number | null>(null);
+  const [selectedYear, setSelectedYear] = useState<number | null>(null);
   const categoryDropdownRef = useRef<HTMLDivElement>(null);
   const filterDropdownRef = useRef<HTMLDivElement>(null);
+  const monthPickerRef = useRef<HTMLDivElement>(null);
 
   // ── Pagination state ─────────────────────────────────────
   const [currentPage, setCurrentPage] = useState(1);
@@ -531,6 +599,7 @@ export default function PrototypePage() {
     function handleClick(e: MouseEvent) {
       if (categoryDropdownRef.current && !categoryDropdownRef.current.contains(e.target as Node)) setCategoryDropdownOpen(false);
       if (filterDropdownRef.current && !filterDropdownRef.current.contains(e.target as Node)) setFilterDropdownOpen(false);
+      if (monthPickerRef.current && !monthPickerRef.current.contains(e.target as Node)) setMonthPickerOpen(false);
     }
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
@@ -539,7 +608,7 @@ export default function PrototypePage() {
   useEffect(() => { queueRef.current = queue; }, [queue]);
 
   // Reset to page 1 when filters change
-  useEffect(() => { setCurrentPage(1); }, [selectedCategory, searchTerm]);
+  useEffect(() => { setCurrentPage(1); }, [selectedCategory, searchTerm, selectedMonth, selectedYear]);
 
   const activeItem = useMemo(() => queue.find(q => q.id === activeQueueId) ?? null, [queue, activeQueueId]);
   const reviewables = useMemo(() => queue.filter(q => !q.skipped), [queue]);
@@ -1039,8 +1108,47 @@ export default function PrototypePage() {
   const filteredExpenses = useMemo(() => expenses.filter(item => {
     const matchCat = selectedCategory === "All" || item.category === selectedCategory;
     const matchSearch = item.title.toLowerCase().includes(searchTerm.trim().toLowerCase()) || (item.merchant_name ?? "").toLowerCase().includes(searchTerm.trim().toLowerCase());
-    return matchCat && matchSearch;
-  }), [expenses, searchTerm, selectedCategory]);
+    const matchMonth = selectedMonth === null || selectedYear === null || (() => {
+      if (!item.created_at) return false;
+      const d = new Date(item.created_at);
+      return d.getMonth() === selectedMonth && d.getFullYear() === selectedYear;
+    })();
+    return matchCat && matchSearch && matchMonth;
+  }), [expenses, searchTerm, selectedCategory, selectedMonth, selectedYear]);
+
+  const monthStats = useMemo(() => {
+    return MONTH_SHORT.map((_, monthIndex) => {
+      const monthExpenses = expenses.filter((item) => {
+        if (!item.created_at) return false;
+        const d = new Date(item.created_at);
+        return d.getMonth() === monthIndex && d.getFullYear() === pickerYear;
+      });
+      return {
+        count: monthExpenses.length,
+        total: monthExpenses.reduce((sum, item) => sum + item.amount, 0),
+      };
+    });
+  }, [expenses, pickerYear]);
+
+  const availableYears = useMemo(() => {
+    const years = new Set<number>([new Date().getFullYear()]);
+    expenses.forEach((item) => {
+      if (item.created_at) years.add(new Date(item.created_at).getFullYear());
+    });
+    return Array.from(years).sort((a, b) => b - a);
+  }, [expenses]);
+
+  const clearMonthFilter = useCallback(() => {
+    setSelectedMonth(null);
+    setSelectedYear(null);
+    setMonthPickerOpen(false);
+  }, []);
+
+  const selectMonth = useCallback((monthIndex: number) => {
+    setSelectedMonth(monthIndex);
+    setSelectedYear(pickerYear);
+    setMonthPickerOpen(false);
+  }, [pickerYear]);
 
   // ── Pagination derived values ─────────────────────────────
   const totalPages = Math.max(1, Math.ceil(filteredExpenses.length / RECORDS_PER_PAGE));
@@ -1048,6 +1156,11 @@ export default function PrototypePage() {
     const start = (currentPage - 1) * RECORDS_PER_PAGE;
     return filteredExpenses.slice(start, start + RECORDS_PER_PAGE);
   }, [filteredExpenses, currentPage]);
+
+  const handleExportCsv = useCallback(() => {
+    if (filteredExpenses.length === 0) return;
+    exportExpensesToCsv(filteredExpenses);
+  }, [filteredExpenses]);
 
   const glass = isDark
     ? { background: "rgba(13,17,26,0.75)", border: "1px solid rgba(255,255,255,0.06)", backdropFilter: "blur(20px)" }
@@ -1150,7 +1263,7 @@ export default function PrototypePage() {
 
   if (loadingData) {
     return (
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "60vh", flexDirection: "column", gap: "1rem" }}>
+      <div className="dashboard-page" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "60vh", flexDirection: "column", gap: "1rem" }}>
         <div style={{ position: "relative", width: 48, height: 48 }}>
           <div style={{ position: "absolute", inset: 0, borderRadius: "50%", border: "2px solid rgba(20,184,166,0.15)", borderTopColor: "#14b8a6", animation: "spin 0.9s linear infinite" }} />
           <div style={{ position: "absolute", inset: 8, borderRadius: "50%", border: "2px solid rgba(20,184,166,0.08)", borderBottomColor: "#2dd4bf", animation: "spin 1.4s linear infinite reverse" }} />
@@ -1181,6 +1294,9 @@ export default function PrototypePage() {
         .dash-btn-primary:active:not(:disabled) { transform: translateY(0); }
         .dash-btn-outline { transition: background 0.15s, border-color 0.15s; }
         .dash-btn-outline:hover { background: ${isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)"} !important; }
+        .dashboard-page button:focus:not(:focus-visible),
+        .dashboard-page .cat-chip:focus:not(:focus-visible),
+        .dashboard-page .page-btn:focus:not(:focus-visible) { outline: none; box-shadow: none; }
 
         .expense-row { transition: background 0.15s, transform 0.12s; border-radius: 12px; }
         .expense-row:hover { background: ${glassHover} !important; transform: translateX(2px); }
@@ -1191,8 +1307,21 @@ export default function PrototypePage() {
         .cat-chip:hover { border-color: rgba(20,184,166,0.4) !important; color: #14b8a6 !important; }
         .cat-chip.active { background: rgba(20,184,166,0.12) !important; border-color: rgba(20,184,166,0.35) !important; color: #14b8a6 !important; }
 
+        .month-chip { transition: background 0.15s, border-color 0.15s, transform 0.12s; cursor: pointer; font-family: inherit; }
+        .month-chip:hover { border-color: rgba(20,184,166,0.35) !important; background: ${isDark ? "rgba(20,184,166,0.08)" : "rgba(20,184,166,0.06)"} !important; }
+        .month-chip.active { background: rgba(20,184,166,0.12) !important; border-color: rgba(20,184,166,0.4) !important; box-shadow: inset 0 0 0 1px rgba(20,184,166,0.15); }
+
         .scroll-list::-webkit-scrollbar { width: 4px; }
         .scroll-list::-webkit-scrollbar-thumb { background: rgba(100,116,139,0.2); border-radius: 999px; }
+
+        .records-scroll {
+          max-height: min(420px, 52vh);
+          overflow-y: auto;
+          overflow-x: hidden;
+          padding-right: 0.25rem;
+          flex-shrink: 1;
+          min-height: 0;
+        }
 
         .cat-shimmer {
           background: linear-gradient(90deg,
@@ -1235,13 +1364,43 @@ export default function PrototypePage() {
         }
       `}</style>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+      <div className="dashboard-page" style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+
+        {/* ── Currency picker ── */}
+        <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: "0.45rem" }}>
+          <span style={{ fontSize: "0.72rem", fontWeight: 600, color: txSub, letterSpacing: "0.02em" }}>Currency</span>
+          <select
+            value={currency}
+            onChange={(e) => setCurrency(e.target.value as CurrencyCode)}
+            title="Change display currency"
+            style={{
+              padding: "0.3rem 0.55rem",
+              borderRadius: 8,
+              fontSize: "0.78rem",
+              fontWeight: 600,
+              fontFamily: "inherit",
+              cursor: "pointer",
+              outline: "none",
+              minWidth: 130,
+              color: isDark ? "#f8fafc" : "#0f172a",
+              background: isDark ? "rgba(255,255,255,0.1)" : "#ffffff",
+              border: isDark ? "1px solid rgba(255,255,255,0.2)" : "1px solid rgba(0,0,0,0.14)",
+              boxShadow: isDark ? "none" : "0 1px 2px rgba(0,0,0,0.04)",
+            }}
+          >
+            {CURRENCIES.map((c) => (
+              <option key={c.code} value={c.code} style={{ color: "#0f172a", background: "#ffffff" }}>
+                {c.label}
+              </option>
+            ))}
+          </select>
+        </div>
 
         {/* ── Stat Cards ── */}
         <div className="dash-cols-4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "1rem" }}>
           {[
             {
-              label: "Total Spent", value: pesoFormatter.format(totals.total), Icon: IconSpend, accent: "#14b8a6",
+              label: "Total Spent", value: formatMoney(totals.total), Icon: IconSpend, accent: "#14b8a6",
               trend: trends.pct !== null ? { pct: trends.pct, up: trends.pct > 0 } : null,
               trendLabel: "vs last week",
             },
@@ -1257,7 +1416,7 @@ export default function PrototypePage() {
               trend: null, trendLabel: totals.total > 0 ? `${((totals.byCategory[totals.topCategory as ExpenseCategory] ?? 0) / totals.total * 100).toFixed(0)}% of spend` : null,
             },
             {
-              label: "Avg Expense", value: pesoFormatter.format(totals.average), Icon: IconAvg, accent: "#ec4899",
+              label: "Avg Expense", value: formatMoney(totals.average), Icon: IconAvg, accent: "#ec4899",
               trend: null, trendLabel: `across ${expenses.length} records`,
             },
           ].map(({ label, value, Icon, accent, trend, trendLabel }) => (
@@ -1434,7 +1593,7 @@ export default function PrototypePage() {
                   )}
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
-                  {([["Merchant", ocrResult?.merchant ?? "—"], ["Date", ocrResult?.date ?? "—"], ["Total (PHP)", ocrResult?.amount != null ? pesoFormatter.format(ocrResult.amount) : "—"], ["Category", ocrResult?.category ?? "—"]] as [string, string][]).map(([k, v]) => (
+                  {([["Merchant", ocrResult?.merchant ?? "—"], ["Date", ocrResult?.date ?? "—"], ["Total", ocrResult?.amount != null ? formatMoney(ocrResult.amount) : "—"], ["Category", ocrResult?.category ?? "—"]] as [string, string][]).map(([k, v]) => (
                     <div key={k} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0.4rem 0", borderBottom: isDark ? "1px solid rgba(255,255,255,0.04)" : "1px solid rgba(0,0,0,0.05)" }}>
                       <span style={{ fontSize: "0.78rem", color: txMute }}>{k}</span>
                       <span style={{ fontSize: "0.78rem", fontWeight: 600, color: v === "—" ? txMute : "#14b8a6" }}>{v}</span>
@@ -1485,7 +1644,7 @@ export default function PrototypePage() {
         </div>
 
         {/* ── Add Expense + Records ── */}
-        <div className="dash-cols-main" ref={formRef} style={{ display: "grid", gridTemplateColumns: "2fr 3fr", gap: "1.2rem" }}>
+        <div className="dash-cols-main" ref={formRef} style={{ display: "grid", gridTemplateColumns: "2fr 3fr", gap: "1.2rem", alignItems: "start" }}>
 
           {/* ── Add Expense Form ── */}
           <form onSubmit={handleAddExpense} style={{ ...glass, borderRadius: 22, padding: "1.6rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
@@ -1575,14 +1734,16 @@ export default function PrototypePage() {
           </form>
 
           {/* ── Expense Records ── */}
-          <div style={{ ...glass, borderRadius: 22, padding: "1.6rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
+          <div style={{ ...glass, borderRadius: 22, padding: "1.6rem", display: "flex", flexDirection: "column", gap: "1rem", minHeight: 0, overflow: "hidden" }}>
             <div style={{ display: "flex", flexWrap: "wrap", alignItems: "flex-start", justifyContent: "space-between", gap: "0.75rem" }}>
               <div>
                 <h2 style={{ fontSize: "1.05rem", fontWeight: 700, color: tx, margin: 0 }}>Expense Records</h2>
                 <p style={{ fontSize: "0.72rem", color: txMute, marginTop: "0.15rem" }}>
-                  {filteredExpenses.length !== expenses.length
-                    ? `Showing ${filteredExpenses.length} of ${expenses.length}`
-                    : `${expenses.length} total`}
+                  {selectedMonth !== null && selectedYear !== null
+                    ? `${MONTH_NAMES[selectedMonth]} ${selectedYear} · ${filteredExpenses.length} record${filteredExpenses.length !== 1 ? "s" : ""}`
+                    : filteredExpenses.length !== expenses.length
+                      ? `Showing ${filteredExpenses.length} of ${expenses.length}`
+                      : `${expenses.length} total`}
                 </p>
               </div>
               <div className="rec-search-wrap" style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
@@ -1593,6 +1754,140 @@ export default function PrototypePage() {
                 <div className="rec-filter-wrap" style={{ width: 140 }}>
                   <CategoryDropdown value={selectedCategory} onChange={v => setSelectedCategory(v as ExpenseCategory | "All")} open={filterDropdownOpen} setOpen={setFilterDropdownOpen} dropRef={filterDropdownRef} filterMode />
                 </div>
+                <div ref={monthPickerRef} style={{ position: "relative" }}>
+                  <button
+                    type="button"
+                    onClick={() => setMonthPickerOpen((open) => !open)}
+                    title="Filter by month"
+                    className="dash-btn-outline"
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "0.4rem",
+                      padding: "0.55rem 0.85rem",
+                      borderRadius: 10,
+                      background: selectedMonth !== null ? (isDark ? "rgba(20,184,166,0.1)" : "rgba(20,184,166,0.08)") : "transparent",
+                      border: selectedMonth !== null ? "1px solid rgba(20,184,166,0.35)" : isDark ? "1px solid rgba(255,255,255,0.1)" : "1px solid rgba(0,0,0,0.12)",
+                      color: selectedMonth !== null ? "#14b8a6" : txSub,
+                      fontSize: "0.78rem",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    <IconCalendar size={14} color={selectedMonth !== null ? "#14b8a6" : txMute} />
+                    {selectedMonth !== null && selectedYear !== null ? `${MONTH_SHORT[selectedMonth]} ${selectedYear}` : "By Month"}
+                  </button>
+                  {monthPickerOpen && (
+                    <div style={{
+                      position: "absolute",
+                      top: "calc(100% + 6px)",
+                      right: 0,
+                      zIndex: 110,
+                      width: "min(340px, 92vw)",
+                      background: dropdownBg,
+                      border: `1px solid ${dropdownBorder}`,
+                      borderRadius: 14,
+                      padding: "0.85rem",
+                      boxShadow: isDark ? "0 16px 40px rgba(0,0,0,0.6)" : "0 8px 24px rgba(0,0,0,0.12)",
+                    }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.75rem", gap: "0.5rem" }}>
+                        <button type="button" onClick={() => setPickerYear((y) => y - 1)}
+                          style={{ width: 28, height: 28, borderRadius: 7, border: `1px solid ${dropdownBorder}`, background: "transparent", color: tx, cursor: "pointer", fontFamily: "inherit", fontSize: "0.9rem" }}>
+                          ‹
+                        </button>
+                        <span style={{ fontSize: "0.85rem", fontWeight: 700, color: tx }}>{pickerYear}</span>
+                        <button type="button" onClick={() => setPickerYear((y) => y + 1)}
+                          style={{ width: 28, height: 28, borderRadius: 7, border: `1px solid ${dropdownBorder}`, background: "transparent", color: tx, cursor: "pointer", fontFamily: "inherit", fontSize: "0.9rem" }}>
+                          ›
+                        </button>
+                      </div>
+                      <button type="button" onClick={clearMonthFilter}
+                        style={{
+                          width: "100%", marginBottom: "0.65rem", padding: "0.45rem 0.65rem", borderRadius: 8,
+                          border: selectedMonth === null ? "1px solid rgba(20,184,166,0.35)" : `1px solid ${dropdownBorder}`,
+                          background: selectedMonth === null ? "rgba(20,184,166,0.1)" : "transparent",
+                          color: selectedMonth === null ? "#14b8a6" : txSub,
+                          fontSize: "0.75rem", fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
+                        }}>
+                        All months
+                      </button>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "0.45rem" }}>
+                        {MONTH_SHORT.map((label, monthIndex) => {
+                          const { count, total } = monthStats[monthIndex];
+                          const isActive = selectedMonth === monthIndex && selectedYear === pickerYear;
+                          return (
+                            <button
+                              key={label}
+                              type="button"
+                              className={`month-chip${isActive ? " active" : ""}`}
+                              onClick={() => selectMonth(monthIndex)}
+                              style={{
+                                display: "flex",
+                                flexDirection: "column",
+                                alignItems: "flex-start",
+                                gap: "0.12rem",
+                                padding: "0.55rem 0.6rem",
+                                borderRadius: 10,
+                                border: `1px solid ${isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.1)"}`,
+                                background: "transparent",
+                                textAlign: "left",
+                                opacity: count === 0 ? 0.55 : 1,
+                              }}
+                            >
+                              <span style={{ fontSize: "0.75rem", fontWeight: 700, color: isActive ? "#14b8a6" : tx }}>{label}</span>
+                              <span style={{ fontSize: "0.62rem", color: txMute }}>{count} expense{count !== 1 ? "s" : ""}</span>
+                              <span style={{ fontSize: "0.68rem", fontWeight: 600, color: count > 0 ? "#14b8a6" : txMute }}>{formatMoney(total)}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {availableYears.length > 1 && (
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem", marginTop: "0.7rem", paddingTop: "0.65rem", borderTop: `1px solid ${isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)"}` }}>
+                          {availableYears.map((year) => (
+                            <button key={year} type="button" onClick={() => setPickerYear(year)}
+                              style={{
+                                padding: "0.22rem 0.55rem", borderRadius: 999, fontSize: "0.68rem", fontWeight: 600,
+                                border: pickerYear === year ? "1px solid rgba(20,184,166,0.35)" : `1px solid ${dropdownBorder}`,
+                                background: pickerYear === year ? "rgba(20,184,166,0.1)" : "transparent",
+                                color: pickerYear === year ? "#14b8a6" : txMute,
+                                cursor: "pointer", fontFamily: "inherit",
+                              }}>
+                              {year}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={handleExportCsv}
+                  disabled={filteredExpenses.length === 0}
+                  title="Download filtered expenses as CSV"
+                  className="dash-btn-outline"
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "0.4rem",
+                    padding: "0.55rem 0.85rem",
+                    borderRadius: 10,
+                    background: "transparent",
+                    border: isDark ? "1px solid rgba(255,255,255,0.1)" : "1px solid rgba(0,0,0,0.12)",
+                    color: filteredExpenses.length === 0 ? txMute : "#14b8a6",
+                    fontSize: "0.78rem",
+                    fontWeight: 600,
+                    cursor: filteredExpenses.length === 0 ? "not-allowed" : "pointer",
+                    fontFamily: "inherit",
+                    opacity: filteredExpenses.length === 0 ? 0.5 : 1,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  <IconDownload size={14} color={filteredExpenses.length === 0 ? txMute : "#14b8a6"} />
+                  Export CSV
+                </button>
               </div>
             </div>
 
@@ -1611,8 +1906,8 @@ export default function PrototypePage() {
               })}
             </div>
 
-            {/* Records list — paginated */}
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+            {/* Records list — paginated, scrollable when tall */}
+            <div className="scroll-list records-scroll" style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
               {paginatedExpenses.map(item => {
                 const CatIcon = CATEGORY_ICON_COMPONENTS[item.category];
                 const scanSrc = item.scan_source ?? null;
@@ -1639,7 +1934,7 @@ export default function PrototypePage() {
                         </div>
                       </div>
                       <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexShrink: 0, marginLeft: "0.5rem" }}>
-                        <span className="rec-amount" style={{ fontWeight: 700, fontSize: "0.9rem", color: tx, whiteSpace: "nowrap" }}>{pesoFormatter.format(item.amount)}</span>
+                        <span className="rec-amount" style={{ fontWeight: 700, fontSize: "0.9rem", color: tx, whiteSpace: "nowrap" }}>{formatMoney(item.amount)}</span>
                         {(item.notes || item.receipt_image_url) && (
                           <button type="button" className="rec-expand" onClick={() => setExpandedId(expandedId === item.id ? null : item.id)}
                             style={{ padding: "0.2rem 0.45rem", borderRadius: 6, background: "transparent", border: isDark ? "1px solid rgba(255,255,255,0.08)" : "1px solid rgba(0,0,0,0.1)", cursor: "pointer", fontSize: "0.62rem", color: txMute }}>
@@ -1696,7 +1991,7 @@ export default function PrototypePage() {
 
             <div style={{ padding: "1rem", borderRadius: 14, background: isDark ? "rgba(20,184,166,0.06)" : "rgba(20,184,166,0.05)", border: "1px solid rgba(20,184,166,0.2)" }}>
               <p style={{ fontSize: "0.68rem", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: txMute }}>Total Monthly Income · Budget</p>
-              <p style={{ fontSize: "1.8rem", fontWeight: 800, letterSpacing: "-0.02em", color: "#14b8a6", marginTop: "0.2rem" }}>{pesoFormatter.format(totalIncome)}</p>
+              <p style={{ fontSize: "1.8rem", fontWeight: 800, letterSpacing: "-0.02em", color: "#14b8a6", marginTop: "0.2rem" }}>{formatMoney(totalIncome)}</p>
             </div>
 
             <form onSubmit={handleAddIncome} style={{ display: "flex", flexDirection: "column", gap: "0.7rem" }}>
@@ -1743,7 +2038,7 @@ export default function PrototypePage() {
                         </div>
                       </div>
                       <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexShrink: 0 }}>
-                        <span style={{ fontWeight: 700, fontSize: "0.88rem", color: "#14b8a6" }}>{pesoFormatter.format(item.amount)}</span>
+                        <span style={{ fontWeight: 700, fontSize: "0.88rem", color: "#14b8a6" }}>{formatMoney(item.amount)}</span>
                         <button type="button" className="del-btn" onClick={() => handleDeleteIncome(item.id)}
                           style={{ padding: "0.25rem 0.6rem", borderRadius: 7, background: "transparent", border: "1px solid rgba(239,68,68,0.18)", color: "#f87171", fontSize: "0.7rem", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Delete</button>
                       </div>
@@ -1778,7 +2073,7 @@ export default function PrototypePage() {
                             </div>
                             <span style={{ fontSize: "0.85rem", fontWeight: 600, color: tx }}>{name}</span>
                           </div>
-                          <span style={{ fontSize: "0.78rem", color: txSub }}>{pesoFormatter.format(value)} · <span style={{ color }}>{pct.toFixed(0)}%</span></span>
+                          <span style={{ fontSize: "0.78rem", color: txSub }}>{formatMoney(value)} · <span style={{ color }}>{pct.toFixed(0)}%</span></span>
                         </div>
                         <div style={{ height: 6, borderRadius: 999, background: isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.06)", overflow: "hidden" }}>
                           <div style={{ height: "100%", borderRadius: 999, background: color, width: `${pct}%`, transition: "width 0.8s cubic-bezier(0.22,1,0.36,1)", opacity: 0.9 }} />
@@ -1797,7 +2092,7 @@ export default function PrototypePage() {
           <div style={{ ...glass, borderRadius: 22, padding: "1.6rem" }}>
             <h2 style={{ fontSize: "1.05rem", fontWeight: 700, color: tx, margin: "0 0 0.2rem" }}>Budget Health</h2>
             <p style={{ fontSize: "0.78rem", color: txMute, marginBottom: "1.2rem" }}>Remaining from your income this month</p>
-            <p style={{ fontSize: "2.2rem", fontWeight: 800, letterSpacing: "-0.03em", color: budgetStatusColor, marginBottom: "0.8rem" }}>{pesoFormatter.format(budgetLeft)}</p>
+            <p style={{ fontSize: "2.2rem", fontWeight: 800, letterSpacing: "-0.03em", color: budgetStatusColor, marginBottom: "0.8rem" }}>{formatMoney(budgetLeft)}</p>
 
             {/* Color-coded budget bar with threshold markers */}
             <div style={{ position: "relative", marginBottom: "0.5rem" }}>
@@ -1815,7 +2110,7 @@ export default function PrototypePage() {
             </div>
 
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.2rem" }}>
-              <p style={{ fontSize: "0.75rem", color: txMute }}>{budgetUsage.toFixed(0)}% used · {pesoFormatter.format(budgetValue)} budget</p>
+              <p style={{ fontSize: "0.75rem", color: txMute }}>{budgetUsage.toFixed(0)}% used · {formatMoney(budgetValue)} budget</p>
               {/* Budget status label */}
               <span style={{
                 fontSize: "0.65rem", fontWeight: 700, padding: "0.15rem 0.5rem",
@@ -1829,7 +2124,7 @@ export default function PrototypePage() {
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", padding: "1rem", borderRadius: 14, background: isDark ? "rgba(255,255,255,0.025)" : "rgba(0,0,0,0.025)", border: isDark ? "1px solid rgba(255,255,255,0.05)" : "1px solid rgba(0,0,0,0.06)" }}>
-              {[{ label: "Days left", val: `${daysLeft}d` }, { label: "Daily cap", val: pesoFormatter.format(dailyCap) }].map(({ label, val }) => (
+              {[{ label: "Days left", val: `${daysLeft}d` }, { label: "Daily cap", val: formatMoney(dailyCap) }].map(({ label, val }) => (
                 <div key={label}>
                   <p style={{ fontSize: "0.68rem", color: txMute }}>{label}</p>
                   <p style={{ fontSize: "1.15rem", fontWeight: 700, color: budgetStatusColor, marginTop: "0.15rem" }}>{val}</p>
@@ -1862,7 +2157,7 @@ export default function PrototypePage() {
                         </div>
                         <span style={{ fontSize: "0.85rem", fontWeight: 600, color: tx }}>{name}</span>
                       </div>
-                      <span style={{ fontSize: "0.78rem", color: txSub }}>{pesoFormatter.format(value)} · <span style={{ color }}>{pct.toFixed(0)}%</span></span>
+                      <span style={{ fontSize: "0.78rem", color: txSub }}>{formatMoney(value)} · <span style={{ color }}>{pct.toFixed(0)}%</span></span>
                     </div>
                     <div style={{ height: 6, borderRadius: 999, background: isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.06)", overflow: "hidden" }}>
                       <div style={{ height: "100%", borderRadius: 999, background: color, width: `${pct}%`, transition: "width 0.8s cubic-bezier(0.22,1,0.36,1)", opacity: 0.9 }} />
