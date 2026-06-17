@@ -93,8 +93,6 @@ const navItems: NavItem[] = [
   { href: "/prototype/insights", label: "Insights",  Icon: IconTrendingUp },
 ];
 
-// ── Brand lockup — login-page style ─────────────────────────
-// Dark frame + teal glow, matching the login page brand exactly (Image 2 aesthetic)
 function BrandLogo({ size = 36 }: { size?: number }) {
   return (
     <div style={{
@@ -119,18 +117,10 @@ function BrandLogo({ size = 36 }: { size?: number }) {
 function BrandText({ muted }: { muted: string }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "0.18rem" }}>
-      <span style={{
-        fontFamily: "'Syne', 'Space Grotesk', system-ui, sans-serif",
-        fontWeight: 800, fontSize: "0.88rem",
-        letterSpacing: "0.12em", color: "#14b8a6",
-        textTransform: "uppercase", lineHeight: 1,
-      }}>
+      <span style={{ fontFamily: "'Syne', 'Space Grotesk', system-ui, sans-serif", fontWeight: 800, fontSize: "0.88rem", letterSpacing: "0.12em", color: "#14b8a6", textTransform: "uppercase", lineHeight: 1 }}>
         Gastos AI
       </span>
-      <span style={{
-        fontSize: "0.58rem", color: muted,
-        letterSpacing: "0.05em", fontWeight: 500, lineHeight: 1,
-      }}>
+      <span style={{ fontSize: "0.58rem", color: muted, letterSpacing: "0.05em", fontWeight: 500, lineHeight: 1 }}>
         Smart Expense Tracker
       </span>
     </div>
@@ -139,13 +129,16 @@ function BrandText({ muted }: { muted: string }) {
 
 // ── Shell ────────────────────────────────────────────────────
 export default function PrototypeShell({ children }: { children: ReactNode }) {
-  const router = useRouter();
+  const router   = useRouter();
   const pathname = usePathname();
-  const [isDark, setIsDark] = useState(true);
+  const [isDark, setIsDark]           = useState(true);
   const [sessionReady, setSessionReady] = useState(false);
-  const [collapsed, setCollapsed] = useState(false);
-  const [mobileOpen, setMobileOpen] = useState(false);
-  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [collapsed, setCollapsed]     = useState(false);
+  const [mobileOpen, setMobileOpen]   = useState(false);
+  const [userEmail, setUserEmail]     = useState<string | null>(null);
+
+  // Chat page gets a full-bleed layout — no header, no padding wrapper
+  const isChat = pathname === "/prototype/chat";
 
   useEffect(() => {
     let cancelled = false;
@@ -158,7 +151,11 @@ export default function PrototypeShell({ children }: { children: ReactNode }) {
     return () => { cancelled = true; };
   }, [router]);
 
-  useEffect(() => { setMobileOpen(false); }, [pathname]);
+  useEffect(() => {
+    const handler = () => setMobileOpen(true);
+    window.addEventListener("open-mobile-nav", handler);
+    return () => window.removeEventListener("open-mobile-nav", handler);
+  }, []);
 
   async function handleLogout() {
     await supabase.auth.signOut();
@@ -191,6 +188,23 @@ export default function PrototypeShell({ children }: { children: ReactNode }) {
     ?? navItems.find(n => pathname.startsWith(n.href))?.label
     ?? "Dashboard";
 
+  // Sidebar nav — shared between desktop + mobile drawer
+  const NavLinks = () => (
+    <>
+      {navItems.map(({ href, label, Icon }) => {
+        const active = pathname === href;
+        return (
+          <Link key={href} href={href} title={collapsed ? label : undefined}
+            className={`nav-item ${active ? "nav-item-active" : ""}`}
+            style={{ display: "flex", alignItems: "center", gap: "0.65rem", padding: collapsed ? "0.7rem" : "0.65rem 0.75rem", borderRadius: 10, textDecoration: "none", fontWeight: 600, fontSize: "0.85rem", color: active ? "#14b8a6" : textMute, justifyContent: collapsed ? "center" : "flex-start" }}>
+            <Icon size={17} color={active ? "#14b8a6" : textMute} />
+            {!collapsed && <span>{label}</span>}
+          </Link>
+        );
+      })}
+    </>
+  );
+
   return (
     <PrototypeThemeContext.Provider value={{ isDark }}>
       <>
@@ -199,7 +213,6 @@ export default function PrototypeShell({ children }: { children: ReactNode }) {
 
           .shell-root * { box-sizing: border-box; }
           .shell-root { font-family: 'DM Sans', sans-serif; }
-          .g-display { font-family: 'Syne', sans-serif; }
 
           .proto-main::-webkit-scrollbar { width: 5px; }
           .proto-main::-webkit-scrollbar-track { background: transparent; }
@@ -212,15 +225,14 @@ export default function PrototypeShell({ children }: { children: ReactNode }) {
           .side-btn { transition: background 0.15s, color 0.15s; }
           .side-btn:hover { background: ${isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.04)"} !important; }
           .logout-btn:hover { background: rgba(239,68,68,0.09) !important; color: #f87171 !important; }
-
           .collapse-btn { transition: background 0.15s, color 0.15s; }
           .collapse-btn:hover { background: ${isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.04)"} !important; }
 
           .mobile-overlay { position: fixed; inset: 0; z-index: 40; background: rgba(0,0,0,0.65); backdrop-filter: blur(6px); animation: fadeIn 0.2s ease; }
           .mobile-drawer  { position: fixed; top: 0; left: 0; bottom: 0; z-index: 50; width: 264px; background: ${sidebar}; border-right: 1px solid ${border}; display: flex; flex-direction: column; animation: slideIn 0.26s cubic-bezier(0.22,1,0.36,1); }
 
-          @keyframes fadeIn  { from{opacity:0}                    to{opacity:1} }
-          @keyframes slideIn { from{transform:translateX(-100%)}  to{transform:translateX(0)} }
+          @keyframes fadeIn  { from{opacity:0} to{opacity:1} }
+          @keyframes slideIn { from{transform:translateX(-100%)} to{transform:translateX(0)} }
           @keyframes spin    { to{transform:rotate(360deg)} }
           @keyframes glow1   { 0%,100%{transform:translate(0,0)} 50%{transform:translate(20px,-30px)} }
           @keyframes glow2   { 0%,100%{transform:translate(0,0)} 50%{transform:translate(-30px,20px)} }
@@ -229,9 +241,10 @@ export default function PrototypeShell({ children }: { children: ReactNode }) {
 
           @media (max-width: 768px) {
             .desktop-sidebar { display: none !important; }
-            .proto-content   { margin-left: 0 !important; padding-top: 58px; }
+            .proto-content   { margin-left: 0 !important; }
             .proto-page-header { padding: 0.6rem 1rem !important; }
             .proto-page-body   { padding: 1rem 1rem 3rem !important; }
+            .non-chat-top-pad  { padding-top: 58px; }
           }
           @media (min-width: 769px) {
             .mobile-topbar { display: none !important; }
@@ -240,6 +253,7 @@ export default function PrototypeShell({ children }: { children: ReactNode }) {
 
         <div className="shell-root" style={{ display: "flex", minHeight: "100vh", background: bg, color: textBase, transition: "background 0.3s, color 0.3s", position: "relative", overflow: "hidden" }}>
 
+          {/* Ambient orbs */}
           <div className="orb-1" style={{ position: "fixed", width: 600, height: 600, top: -250, left: -150, borderRadius: "50%", background: "radial-gradient(circle, rgba(14,212,184,0.08) 0%, transparent 70%)", filter: "blur(60px)", pointerEvents: "none", zIndex: 0 }} />
           <div className="orb-2" style={{ position: "fixed", width: 500, height: 500, bottom: -200, right: -100, borderRadius: "50%", background: "radial-gradient(circle, rgba(99,102,241,0.07) 0%, transparent 70%)", filter: "blur(60px)", pointerEvents: "none", zIndex: 0 }} />
 
@@ -251,12 +265,7 @@ export default function PrototypeShell({ children }: { children: ReactNode }) {
             transition: "width 0.25s cubic-bezier(0.22,1,0.36,1)", overflow: "hidden",
           }}>
             {/* Brand */}
-            <div style={{
-              padding: collapsed ? "0.9rem 0" : "1rem 1.1rem",
-              display: "flex", alignItems: "center", gap: "0.7rem",
-              borderBottom: `1px solid ${border}`, flexShrink: 0,
-              justifyContent: collapsed ? "center" : "flex-start", minHeight: 68,
-            }}>
+            <div style={{ padding: collapsed ? "0.9rem 0" : "1rem 1.1rem", display: "flex", alignItems: "center", gap: "0.7rem", borderBottom: `1px solid ${border}`, flexShrink: 0, justifyContent: collapsed ? "center" : "flex-start", minHeight: 68 }}>
               <BrandLogo size={38} />
               {!collapsed && <BrandText muted={textMute} />}
             </div>
@@ -266,28 +275,10 @@ export default function PrototypeShell({ children }: { children: ReactNode }) {
               {!collapsed && (
                 <p style={{ fontSize: "0.58rem", fontWeight: 700, letterSpacing: "0.14em", color: textMute, textTransform: "uppercase", padding: "0.4rem 0.65rem 0.5rem" }}>Menu</p>
               )}
-              {navItems.map(({ href, label, Icon }) => {
-                const active = pathname === href;
-                const iconColor = active ? "#14b8a6" : textMute;
-                return (
-                  <Link key={href} href={href} title={collapsed ? label : undefined}
-                    className={`nav-item ${active ? "nav-item-active" : ""}`}
-                    style={{
-                      display: "flex", alignItems: "center", gap: "0.65rem",
-                      padding: collapsed ? "0.7rem" : "0.65rem 0.75rem",
-                      borderRadius: 10, textDecoration: "none",
-                      fontWeight: 600, fontSize: "0.85rem",
-                      color: active ? "#14b8a6" : textMute,
-                      justifyContent: collapsed ? "center" : "flex-start",
-                    }}>
-                    <Icon size={17} color={iconColor} />
-                    {!collapsed && <span>{label}</span>}
-                  </Link>
-                );
-              })}
+              <NavLinks />
             </nav>
 
-            {/* Bottom */}
+            {/* Bottom controls */}
             <div style={{ padding: "0.6rem 0.6rem", borderTop: `1px solid ${border}`, display: "flex", flexDirection: "column", gap: "0.1rem", flexShrink: 0 }}>
               {!collapsed && userEmail && (
                 <div style={{ padding: "0.5rem 0.75rem 0.6rem", marginBottom: "0.15rem" }}>
@@ -322,14 +313,13 @@ export default function PrototypeShell({ children }: { children: ReactNode }) {
           <header className="mobile-topbar" style={{
             position: "fixed", top: 0, left: 0, right: 0, zIndex: 30,
             height: 58, background: sidebar, borderBottom: `1px solid ${border}`,
-            display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 1rem",
+            display: isChat ? "none" : "flex",   // ← only change
+            alignItems: "center", justifyContent: "space-between", padding: "0 1rem",
           }}>
             <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
               <BrandLogo size={32} />
-              {/* REPLACED: Now using the unified BrandText component */}
-              <BrandText muted={textMute} /> 
+              <BrandText muted={textMute} />
             </div>
-            
             <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
               <button type="button" onClick={() => setIsDark(p => !p)}
                 style={{ width: 36, height: 36, borderRadius: 9, background: "transparent", border: `1px solid ${border}`, cursor: "pointer", display: "grid", placeItems: "center", color: textMute }}>
@@ -390,33 +380,55 @@ export default function PrototypeShell({ children }: { children: ReactNode }) {
           )}
 
           {/* ── MAIN CONTENT ── */}
-          <main className="proto-main proto-content" style={{
-            marginLeft: sideW, flex: 1, minHeight: "100vh", overflowY: "auto",
-            transition: "margin-left 0.25s cubic-bezier(0.22,1,0.36,1)", position: "relative", zIndex: 1,
-          }}>
-            <div className="proto-page-header" style={{
-              position: "sticky", top: 0, zIndex: 20,
-              background: isDark ? "rgba(7,9,15,0.88)" : "rgba(241,245,249,0.9)",
-              backdropFilter: "blur(16px)", borderBottom: `1px solid ${border}`,
-              padding: "0.75rem 1.75rem",
-              display: "flex", alignItems: "center", justifyContent: "space-between", minHeight: 58,
-            }}>
-              <div>
-                <p style={{ fontSize: "0.62rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "#14b8a6", margin: 0 }}>{currentPage}</p>
-                <h1 style={{ fontFamily: "'Space Grotesk', 'Syne', sans-serif", fontSize: "1.05rem", fontWeight: 700, color: textBase, margin: 0, lineHeight: 1.25, letterSpacing: "-0.01em" }}>
-                  {pathname === "/prototype"          && "Expense Dashboard"}
-                  {pathname === "/prototype/chat"     && "Chat with Gastos AI"}
-                  {pathname === "/prototype/insights" && "Insights & Predictions"}
-                </h1>
+          <main
+            className="proto-main proto-content"
+            style={{
+              marginLeft: sideW,
+              flex: 1,
+              // Chat page: fixed full height, no scroll on main
+              // Other pages: normal scrollable layout
+              ...(isChat
+                ? { height: "100vh", overflow: "hidden", display: "flex", flexDirection: "column" }
+                : { minHeight: "100vh", overflowY: "auto" }
+              ),
+              transition: "margin-left 0.25s cubic-bezier(0.22,1,0.36,1)",
+              position: "relative",
+              zIndex: 1,
+            }}
+          >
+            {isChat ? (
+              // ── CHAT: full-bleed, no header, no padding ──────────────
+              // The chat page owns its own layout entirely
+              <div style={{ flex: 1, height: "100%", overflow: "hidden" }}>
+                {children}
               </div>
-              <div style={{ fontSize: "0.72rem", color: textMute, display: "flex", alignItems: "center", gap: "0.45rem" }}>
-                <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#14b8a6", display: "inline-block", boxShadow: "0 0 8px rgba(20,184,166,0.7)" }} />
-                {new Date().toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })}
-              </div>
-            </div>
-            <div className="proto-page-body" style={{ maxWidth: 1200, margin: "0 auto", padding: "1.5rem 1.75rem 3rem" }}>
-              {children}
-            </div>
+            ) : (
+              // ── OTHER PAGES: standard header + padded body ────────────
+              <>
+                <div className="proto-page-header non-chat-top-pad" style={{
+                  position: "sticky", top: 0, zIndex: 20,
+                  background: isDark ? "rgba(7,9,15,0.88)" : "rgba(241,245,249,0.9)",
+                  backdropFilter: "blur(16px)", borderBottom: `1px solid ${border}`,
+                  padding: "0.75rem 1.75rem",
+                  display: "flex", alignItems: "center", justifyContent: "space-between", minHeight: 58,
+                }}>
+                  <div>
+                    <p style={{ fontSize: "0.62rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "#14b8a6", margin: 0 }}>{currentPage}</p>
+                    <h1 style={{ fontFamily: "'Space Grotesk', 'Syne', sans-serif", fontSize: "1.05rem", fontWeight: 700, color: textBase, margin: 0, lineHeight: 1.25, letterSpacing: "-0.01em" }}>
+                      {pathname === "/prototype"          && "Expense Dashboard"}
+                      {pathname === "/prototype/insights" && "Insights & Predictions"}
+                    </h1>
+                  </div>
+                  <div style={{ fontSize: "0.72rem", color: textMute, display: "flex", alignItems: "center", gap: "0.45rem" }}>
+                    <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#14b8a6", display: "inline-block", boxShadow: "0 0 8px rgba(20,184,166,0.7)" }} />
+                    {new Date().toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })}
+                  </div>
+                </div>
+                <div className="proto-page-body" style={{ maxWidth: 1200, margin: "0 auto", padding: "1.5rem 1.75rem 3rem" }}>
+                  {children}
+                </div>
+              </>
+            )}
           </main>
         </div>
       </>
