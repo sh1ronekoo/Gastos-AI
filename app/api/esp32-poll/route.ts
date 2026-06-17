@@ -2,29 +2,43 @@ import { supabaseAdmin } from "@/lib/supabase-server";
 
 export async function GET() {
   try {
-    // Atomically claim the latest unclaimed, non-expired row.
-    // The UPDATE ... WHERE claimed_at IS NULL pattern ensures only one
-    // concurrent poll can claim a given row.
-    const { data, error } = await supabaseAdmin
-      .from("esp32_captures")
-      .update({ claimed_at: new Date().toISOString() })
-      .is("claimed_at", null)
-      .gt("expires_at", new Date().toISOString())
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .select()
-      .single();
+    const nowIso = new Date().toISOString();
 
-    if (error || !data) {
+    // 1. Find the latest unclaimed, non-expired capture.
+    const { data: rows, error: selErr } = await supabaseAdmin
+      .from("esp32_captures")
+      .select("id, ocr_result, image_base64, mime_type")
+      .is("claimed_at", null)
+      .gt("expires_at", nowIso)
+      .order("created_at", { ascending: false })
+      .limit(1);
+
+    if (selErr) {
+      console.error("[esp32-poll] select error:", selErr);
       return Response.json({ status: "waiting" });
     }
 
+    const row = rows?.[0];
+    if (!row) return Response.json({ status: "waiting" });
+
+    // 2. Claim it by id (guard against a concurrent poll claiming the same row).
+    const { data: claimed, error: claimErr } = await supabaseAdmin
+      .from("esp32_captures")
+      .update({ claimed_at: nowIso })
+      .eq("id", row.id)
+      .is("claimed_at", null)
+      .select("id")
+      .maybeSingle();
+
+    // Another poll grabbed it first — tell the client to keep waiting.
+    if (claimErr || !claimed) return Response.json({ status: "waiting" });
+
     return Response.json({
       status:      "ready",
-      id:          data.id,
-      ocrResult:   data.ocr_result,
-      imageBase64: data.image_base64,
-      mimeType:    data.mime_type,
+      id:          row.id,
+      ocrResult:   row.ocr_result,
+      imageBase64: row.image_base64,
+      mimeType:    row.mime_type,
     });
   } catch (error) {
     console.error("[esp32-poll] error:", error);
