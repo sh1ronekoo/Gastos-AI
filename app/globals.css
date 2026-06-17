@@ -304,9 +304,29 @@
 .dashboard-page {
   user-select: none;
   -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  cursor: default;
 }
 
-.dashboard-page :where(input:not([disabled]), textarea:not([disabled]), select:not([disabled])) {
+.dashboard-page :where(input:not([disabled]), textarea:not([disabled])) {
   user-select: text;
   -webkit-user-select: text;
+  cursor: text;
+}
+
+.dashboard-page :where(select:not([disabled])) {
+  cursor: pointer;
+}
+
+.dashboard-page :where(button, a, label, .cat-chip, .page-btn, .del-btn, .rec-expand) {
+  cursor: pointer;
+}
+
+.dashboard-page :where(button, a, .cat-chip, .page-btn, .del-btn, .rec-expand):focus:not(:focus-visible) {
+  outline: none;
+  box-shadow: none;
+}
+
+.dashboard-page :where(p, span, h1, h2, h3, h4, h5, h6) {
+  cursor: default;
 }

@@ -3,14 +3,33 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { supabase } from "@/lib/supabase";
+import {
+  CURRENCY_STORAGE_KEY,
+  formatMoney as formatMoneyUtil,
+  type CurrencyCode,
+} from "@/lib/currency";
 
 export const PrototypeThemeContext = createContext<{ isDark: boolean } | null>(null);
 
 export function usePrototypeTheme() {
   const ctx = useContext(PrototypeThemeContext);
   if (!ctx) throw new Error("usePrototypeTheme must be used inside the prototype area.");
+  return ctx;
+}
+
+type CurrencyContextValue = {
+  currency: CurrencyCode;
+  setCurrency: (code: CurrencyCode) => void;
+  formatMoney: (amountPHP: number) => string;
+};
+
+export const PrototypeCurrencyContext = createContext<CurrencyContextValue | null>(null);
+
+export function useCurrency() {
+  const ctx = useContext(PrototypeCurrencyContext);
+  if (!ctx) throw new Error("useCurrency must be used inside the prototype area.");
   return ctx;
 }
 
@@ -136,9 +155,33 @@ export default function PrototypeShell({ children }: { children: ReactNode }) {
   const [collapsed, setCollapsed]     = useState(false);
   const [mobileOpen, setMobileOpen]   = useState(false);
   const [userEmail, setUserEmail]     = useState<string | null>(null);
+  const [currency, setCurrencyState]  = useState<CurrencyCode>("PHP");
+
+  const setCurrency = useCallback((code: CurrencyCode) => {
+    setCurrencyState(code);
+    try { localStorage.setItem(CURRENCY_STORAGE_KEY, code); } catch { /* ignore */ }
+  }, []);
+
+  const formatMoney = useCallback(
+    (amountPHP: number) => formatMoneyUtil(amountPHP, currency),
+    [currency],
+  );
+
+  const currencyCtx = useMemo(
+    () => ({ currency, setCurrency, formatMoney }),
+    [currency, setCurrency, formatMoney],
+  );
 
   // Chat page gets a full-bleed layout — no header, no padding wrapper
   const isChat = pathname === "/prototype/chat";
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(CURRENCY_STORAGE_KEY) as CurrencyCode | null;
+      const valid: CurrencyCode[] = ["PHP", "EUR", "USD", "JPY", "KRW"];
+      if (saved && valid.includes(saved)) setCurrencyState(saved);
+    } catch { /* ignore */ }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -207,6 +250,7 @@ export default function PrototypeShell({ children }: { children: ReactNode }) {
 
   return (
     <PrototypeThemeContext.Provider value={{ isDark }}>
+      <PrototypeCurrencyContext.Provider value={currencyCtx}>
       <>
         <style suppressHydrationWarning>{`
           @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700;800&family=Syne:wght@700;800&family=DM+Sans:wght@400;500;600&display=swap');
@@ -432,6 +476,7 @@ export default function PrototypeShell({ children }: { children: ReactNode }) {
           </main>
         </div>
       </>
+      </PrototypeCurrencyContext.Provider>
     </PrototypeThemeContext.Provider>
   );
 }

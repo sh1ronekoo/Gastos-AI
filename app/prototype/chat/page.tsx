@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { usePrototypeTheme } from "../prototype-shell";
+import { usePrototypeTheme, useCurrency } from "../prototype-shell";
 import { supabase } from "@/lib/supabase";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -31,6 +31,7 @@ function relativeTime(d: string) {
 // ─── Component ───────────────────────────────────────────────────────────────
 export default function ChatPage() {
   const { isDark } = usePrototypeTheme();
+  const { formatMoney } = useCurrency();
 
   // Data
   const [expenses,  setExpenses]  = useState<unknown[]>([]);
@@ -310,7 +311,7 @@ export default function ChatPage() {
           <div style={{ display: "flex", alignItems: "center", gap: "0.45rem" }}>
             <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#22c55e", flexShrink: 0, boxShadow: "0 0 6px rgba(34,197,94,0.5)" }} />
             <p style={{ fontSize: "0.67rem", color: txMute }}>
-              {expenseCount} expense{expenseCount !== 1 ? "s" : ""} · ₱{Number(budget).toLocaleString()} budget
+              {expenseCount} expense{expenseCount !== 1 ? "s" : ""} · {formatMoney(Number(budget))} budget
             </p>
           </div>
         </div>
@@ -545,7 +546,7 @@ export default function ChatPage() {
                     I can see your{" "}
                     <span style={{ color: "#14b8a6", fontWeight: 600 }}>{expenseCount} expense{expenseCount !== 1 ? "s" : ""}</span>
                     {" "}and{" "}
-                    <span style={{ color: "#14b8a6", fontWeight: 600 }}>₱{Number(budget).toLocaleString()}</span> budget
+                    <span style={{ color: "#14b8a6", fontWeight: 600 }}>{formatMoney(Number(budget))}</span> budget
                   </p>
                 </div>
                 <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: "0.45rem", maxWidth: 500 }}>
@@ -613,7 +614,7 @@ export default function ChatPage() {
             </div>
             {!isMobile && (
               <p style={{ fontSize: "0.66rem", color: txMute, marginTop: "0.4rem", textAlign: "center" }}>
-                {expenseCount} expense{expenseCount !== 1 ? "s" : ""} · ₱{Number(budget).toLocaleString()} budget · Shift+Enter for new line
+                {expenseCount} expense{expenseCount !== 1 ? "s" : ""} · {formatMoney(Number(budget))} budget · Shift+Enter for new line
               </p>
             )}
           </div>

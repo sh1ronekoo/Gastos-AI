@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { usePrototypeTheme } from "../prototype-shell";
+import { usePrototypeTheme, useCurrency } from "../prototype-shell";
 import { supabase } from "@/lib/supabase";
 
 type InsightData = {
@@ -23,8 +23,6 @@ type Expense = {
   auto_categorized: boolean;
   created_at: string;
 };
-
-const pesoFormatter = new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" });
 
 const CATEGORY_COLORS: Record<string, string> = {
   Food: "#14b8a6", Transport: "#6366f1", Utilities: "#fb923c",
@@ -136,6 +134,7 @@ const CATEGORY_ICON_COMPONENTS: Record<string, React.ComponentType> = {
 
 export default function InsightsPage() {
   const { isDark } = usePrototypeTheme();
+  const { formatMoney } = useCurrency();
   const [insights, setInsights]         = useState<InsightData | null>(null);
   const [loading, setLoading]           = useState(false);
   const [expenses, setExpenses]         = useState<Expense[]>([]);
@@ -303,7 +302,7 @@ export default function InsightsPage() {
               <div className="ins-4col" style={{ marginTop: "1.2rem" }}>
                 {[
                   { label: "Total expenses",    value: String(expenses.length),                   Icon: Icons.Clipboard, color: "#6366f1" },
-                  { label: "Total spent",        value: pesoFormatter.format(totalSpent),           Icon: Icons.Money,     color: "#14b8a6" },
+                  { label: "Total spent",        value: formatMoney(totalSpent),           Icon: Icons.Money,     color: "#14b8a6" },
                   { label: "Auto-categorized",   value: `${aiCategorizedCount} / ${expenses.length}`, Icon: Icons.Robot,  color: "#ec4899" },
                   { label: "Top category",       value: sortedCategories[0]?.[0] ?? "—",           Icon: Icons.Trophy,    color: "#fb923c" },
                 ].map((s) => (
@@ -325,9 +324,9 @@ export default function InsightsPage() {
         {insights ? (
           <div className="ins-3col">
             {[
-              { label: "Projected month-end",  value: pesoFormatter.format(insights.projectedMonthEnd),   hint: "based on daily average",  color: insights.projectedMonthEnd > budgetNum ? "#f87171" : "#14b8a6", Icon: Icons.TrendUp, delay: "0.05s" },
+              { label: "Projected month-end",  value: formatMoney(insights.projectedMonthEnd),   hint: "based on daily average",  color: insights.projectedMonthEnd > budgetNum ? "#f87171" : "#14b8a6", Icon: Icons.TrendUp, delay: "0.05s" },
               { label: "Risk of overspend",     value: `${insights.overspendRisk}%`,                       hint: "model confidence",         color: insights.overspendRisk > 60 ? "#f87171" : "#14b8a6",           Icon: Icons.Warning, delay: "0.1s"  },
-              { label: "Suggested weekly cap",  value: pesoFormatter.format(insights.suggestedWeeklyCap),  hint: "recommended by AI",        color: "#14b8a6",                                                       Icon: Icons.Wallet,  delay: "0.15s" },
+              { label: "Suggested weekly cap",  value: formatMoney(insights.suggestedWeeklyCap),  hint: "recommended by AI",        color: "#14b8a6",                                                       Icon: Icons.Wallet,  delay: "0.15s" },
             ].map((item) => (
               <div key={item.label} className="ins-card ins-card-pad" style={{ ...glass, borderRadius: 16, padding: "1.3rem", animationDelay: item.delay, position: "relative", overflow: "hidden" }}>
                 <div style={{ position: "absolute", top: -18, right: -18, width: 72, height: 72, borderRadius: "50%", background: `radial-gradient(circle, ${item.color}15 0%, transparent 70%)`, pointerEvents: "none" }} />
@@ -433,7 +432,7 @@ export default function InsightsPage() {
                           <span style={{ fontSize: "0.82rem", fontWeight: 600, color: tx, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{cat}</span>
                         </div>
                         <span className="cat-amount" style={{ fontSize: "0.75rem", color: txSub, flexShrink: 0, whiteSpace: "nowrap" }}>
-                          {pesoFormatter.format(val)} · <span style={{ color }}>{pct.toFixed(0)}%</span>
+                          {formatMoney(val)} · <span style={{ color }}>{pct.toFixed(0)}%</span>
                         </span>
                       </div>
                       <div style={{ height: 5, borderRadius: 999, background: trackBg, overflow: "hidden" }}>
@@ -486,7 +485,7 @@ export default function InsightsPage() {
                               </linearGradient>
                             </defs>
                           )}
-                          <title>{label}: {total > 0 ? pesoFormatter.format(total) : "No data"}</title>
+                          <title>{label}: {total > 0 ? formatMoney(total) : "No data"}</title>
                           <rect x={x} y={y} width={barW} height={barH} rx="4"
                             fill={isCur ? `url(#${gradId})` : isDark ? "rgba(148,163,184,0.3)" : "rgba(100,116,139,0.25)"}
                             style={{ filter: isCur ? "drop-shadow(0 0 5px rgba(20,184,166,0.4))" : "none" }}
@@ -532,7 +531,7 @@ export default function InsightsPage() {
                         <div style={{ height: "100%", borderRadius: 999, background: i === 0 ? "#14b8a6" : isDark ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.15)", width: `${(val / (topMerchants[0]?.[1] ?? 1)) * 100}%`, transition: "width 0.8s cubic-bezier(0.22,1,0.36,1)" }} />
                       </div>
                     </div>
-                    <p style={{ fontSize: "0.82rem", fontWeight: 700, color: tx, flexShrink: 0, margin: 0 }}>{pesoFormatter.format(val)}</p>
+                    <p style={{ fontSize: "0.82rem", fontWeight: 700, color: tx, flexShrink: 0, margin: 0 }}>{formatMoney(val)}</p>
                   </div>
                 ))}
               </div>
@@ -594,11 +593,11 @@ export default function InsightsPage() {
           <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", marginBottom: "0.8rem", gap: "0.5rem" }}>
             <div>
               <p style={{ fontSize: "0.6rem", color: txMute, letterSpacing: "0.04em", margin: "0 0 0.12rem" }}>SPENT SO FAR</p>
-              <p className="budget-big" style={{ fontSize: "clamp(1.4rem, 5vw, 2rem)", fontWeight: 800, letterSpacing: "-0.03em", color: budgetUsage >= 80 ? "#f87171" : "#14b8a6", margin: 0 }}>{pesoFormatter.format(totalSpent)}</p>
+              <p className="budget-big" style={{ fontSize: "clamp(1.4rem, 5vw, 2rem)", fontWeight: 800, letterSpacing: "-0.03em", color: budgetUsage >= 80 ? "#f87171" : "#14b8a6", margin: 0 }}>{formatMoney(totalSpent)}</p>
             </div>
             <div style={{ textAlign: "right" }}>
               <p style={{ fontSize: "0.6rem", color: txMute, letterSpacing: "0.04em", margin: "0 0 0.12rem" }}>BUDGET</p>
-              <p style={{ fontSize: "clamp(1rem, 3vw, 1.2rem)", fontWeight: 700, color: tx, margin: 0 }}>{pesoFormatter.format(budgetNum)}</p>
+              <p style={{ fontSize: "clamp(1rem, 3vw, 1.2rem)", fontWeight: 700, color: tx, margin: 0 }}>{formatMoney(budgetNum)}</p>
             </div>
           </div>
 
@@ -609,15 +608,15 @@ export default function InsightsPage() {
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "1.1rem", gap: "0.5rem", flexWrap: "wrap" }}>
             <span style={{ fontSize: "0.72rem", color: txMute }}>{budgetUsage.toFixed(0)}% used</span>
             <span style={{ fontSize: "0.72rem", fontWeight: 700, color: totalSpent > budgetNum ? "#f87171" : "#14b8a6" }}>
-              {totalSpent > budgetNum ? `${pesoFormatter.format(totalSpent - budgetNum)} over budget` : `${pesoFormatter.format(budgetNum - totalSpent)} remaining`}
+              {totalSpent > budgetNum ? `${formatMoney(totalSpent - budgetNum)} over budget` : `${formatMoney(budgetNum - totalSpent)} remaining`}
             </span>
           </div>
 
           <div className="ins-3sub">
             {[
               { label: "Days left",     value: `${daysLeft}d` },
-              { label: "Daily cap",     value: pesoFormatter.format(dailyCap) },
-              { label: "Avg/day so far", value: pesoFormatter.format(now.getDate() > 0 ? totalSpent / now.getDate() : 0) },
+              { label: "Daily cap",     value: formatMoney(dailyCap) },
+              { label: "Avg/day so far", value: formatMoney(now.getDate() > 0 ? totalSpent / now.getDate() : 0) },
             ].map((s) => (
               <div key={s.label} style={{ padding: "0.8rem", borderRadius: 12, background: innerBg, border: `1px solid ${innerBorder}`, textAlign: "center" }}>
                 <p style={{ fontSize: "0.62rem", color: txMute, letterSpacing: "0.04em", margin: "0 0 0.25rem" }}>{s.label}</p>
