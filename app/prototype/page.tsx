@@ -10,6 +10,7 @@ type Expense = {
   id: string; title: string; category: ExpenseCategory; amount: number;
   merchant_name: string | null; notes: string | null; auto_categorized: boolean;
   categorization_source?: "ml" | null;
+  scan_source?: "ocr" | "esp32" | null;
   receipt_image_url: string | null; raw_ocr_text: string | null; created_at?: string;
 };
 type OCRResult = {
@@ -54,6 +55,8 @@ const INCOME_CATEGORY_COLORS: Record<IncomeCategory, string> = {
   Salary: "#14b8a6", Business: "#6366f1", Freelance: "#fb923c",
   Allowance: "#ec4899", Investment: "#22c55e", Other: "#64748b",
 };
+
+const RECORDS_PER_PAGE = 8;
 
 // ── SVG icon components ──────────────────────────────────────
 function IconFood({ size = 18, color = "currentColor" }: { size?: number; color?: string }) {
@@ -218,6 +221,34 @@ function IconBrain({ size = 12, color = "currentColor" }: { size?: number; color
     </svg>
   );
 }
+function IconTrendUp({ size = 14, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="23 6 13.5 15.5 8.5 10.5 1 18" /><polyline points="17 6 23 6 23 12" />
+    </svg>
+  );
+}
+function IconTrendDown({ size = 14, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="23 18 13.5 8.5 8.5 13.5 1 6" /><polyline points="17 18 23 18 23 12" />
+    </svg>
+  );
+}
+function IconChevronLeft({ size = 16, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="15 18 9 12 15 6" />
+    </svg>
+  );
+}
+function IconChevronRight({ size = 16, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="9 18 15 12 9 6" />
+    </svg>
+  );
+}
 
 const CATEGORY_ICON_COMPONENTS: Record<ExpenseCategory, React.FC<{ size?: number; color?: string }>> = {
   Food: IconFood, Transport: IconTransport, Utilities: IconUtilities,
@@ -268,8 +299,8 @@ const INCOME_CATEGORY_ICON_COMPONENTS: Record<IncomeCategory, React.FC<{ size?: 
   Allowance: IconAllowance, Investment: IconInvestment, Other: IconOther,
 };
 
-// ── Source badge ─────────────────────────────────────────────
-function SourceBadge({ source }: { source: "ml" }) {
+// ── Source badges ────────────────────────────────────────────
+function AutoBadge() {
   return (
     <span style={{
       display: "inline-flex", alignItems: "center", gap: "0.25rem",
@@ -281,15 +312,49 @@ function SourceBadge({ source }: { source: "ml" }) {
       flexShrink: 0,
     }}>
       <IconBrain size={9} color="#818cf8" />
-      ML
+      AUTO
+    </span>
+  );
+}
+
+function OcrBadge() {
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center", gap: "0.25rem",
+      padding: "0.05rem 0.42rem", borderRadius: 999,
+      fontSize: "0.58rem", fontWeight: 700, letterSpacing: "0.05em",
+      background: "rgba(20,184,166,0.12)",
+      color: "#14b8a6",
+      border: "1px solid rgba(20,184,166,0.3)",
+      flexShrink: 0,
+    }}>
+      <IconReceipt size={9} color="#14b8a6" />
+      OCR
+    </span>
+  );
+}
+
+function Esp32Badge() {
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center", gap: "0.25rem",
+      padding: "0.05rem 0.42rem", borderRadius: 999,
+      fontSize: "0.58rem", fontWeight: 700, letterSpacing: "0.05em",
+      background: "rgba(251,146,60,0.12)",
+      color: "#fb923c",
+      border: "1px solid rgba(251,146,60,0.3)",
+      flexShrink: 0,
+    }}>
+      <IconESP32 size={9} color="#fb923c" />
+      ESP32
     </span>
   );
 }
 
 // ── Confidence bar pill ──────────────────────────────────────
 function ConfidencePill({
-  confidence, source, isDark,
-}: { confidence: number; source: "ml"; isDark: boolean }) {
+  confidence, isDark,
+}: { confidence: number; isDark: boolean }) {
   const pct = Math.round(confidence * 100);
   const isHigh = pct >= 80;
   const isMid  = pct >= 55;
@@ -302,7 +367,7 @@ function ConfidencePill({
       background: isDark ? "rgba(255,255,255,0.035)" : "rgba(0,0,0,0.03)",
       border: isDark ? "1px solid rgba(255,255,255,0.07)" : "1px solid rgba(0,0,0,0.08)",
     }}>
-      <SourceBadge source={source} />
+      <AutoBadge />
       <div style={{ flex: 1, height: 4, borderRadius: 999, background: isDark ? "rgba(255,255,255,0.07)" : "rgba(0,0,0,0.08)", overflow: "hidden" }}>
         <div style={{
           height: "100%", width: `${pct}%`, borderRadius: 999,
@@ -310,7 +375,82 @@ function ConfidencePill({
         }} />
       </div>
       <span style={{ fontSize: "0.7rem", fontWeight: 700, color, minWidth: 30, textAlign: "right" }}>{pct}%</span>
-      <span style={{ fontSize: "0.65rem", color: isDark ? "#475569" : "#94a3b8" }}>ML confidence</span>
+      <span style={{ fontSize: "0.65rem", color: isDark ? "#475569" : "#94a3b8" }}>confidence</span>
+    </div>
+  );
+}
+
+// ── Pagination component ─────────────────────────────────────
+function Pagination({
+  currentPage, totalPages, onPageChange, isDark, tx, txMute,
+}: {
+  currentPage: number; totalPages: number; onPageChange: (p: number) => void;
+  isDark: boolean; tx: string; txMute: string;
+}) {
+  if (totalPages <= 1) return null;
+
+  const pages: (number | "…")[] = [];
+  if (totalPages <= 5) {
+    for (let i = 1; i <= totalPages; i++) pages.push(i);
+  } else {
+    pages.push(1);
+    if (currentPage > 3) pages.push("…");
+    for (let i = Math.max(2, currentPage - 1); i <= Math.min(totalPages - 1, currentPage + 1); i++) pages.push(i);
+    if (currentPage < totalPages - 2) pages.push("…");
+    pages.push(totalPages);
+  }
+
+  const btnBase: React.CSSProperties = {
+    display: "inline-flex", alignItems: "center", justifyContent: "center",
+    width: 30, height: 30, borderRadius: 8, border: "none",
+    fontSize: "0.75rem", fontWeight: 600, cursor: "pointer",
+    fontFamily: "inherit", transition: "all 0.15s",
+  };
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: "0.75rem", borderTop: isDark ? "1px solid rgba(255,255,255,0.06)" : "1px solid rgba(0,0,0,0.07)" }}>
+      <span style={{ fontSize: "0.7rem", color: txMute }}>
+        Page {currentPage} of {totalPages}
+      </span>
+      <div style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
+        <button
+          type="button"
+          onClick={() => onPageChange(currentPage - 1)}
+          disabled={currentPage === 1}
+          style={{ ...btnBase, background: isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.04)", color: currentPage === 1 ? txMute : tx, opacity: currentPage === 1 ? 0.4 : 1, cursor: currentPage === 1 ? "not-allowed" : "pointer" }}
+        >
+          <IconChevronLeft size={14} color={currentPage === 1 ? txMute : tx} />
+        </button>
+        {pages.map((p, i) =>
+          p === "…" ? (
+            <span key={`ellipsis-${i}`} style={{ width: 30, textAlign: "center", fontSize: "0.75rem", color: txMute }}>…</span>
+          ) : (
+            <button
+              key={p}
+              type="button"
+              onClick={() => onPageChange(p as number)}
+              style={{
+                ...btnBase,
+                background: currentPage === p
+                  ? "linear-gradient(135deg,#14b8a6,#0d9488)"
+                  : isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.04)",
+                color: currentPage === p ? "#fff" : tx,
+                boxShadow: currentPage === p ? "0 2px 8px rgba(20,184,166,0.3)" : "none",
+              }}
+            >
+              {p}
+            </button>
+          )
+        )}
+        <button
+          type="button"
+          onClick={() => onPageChange(currentPage + 1)}
+          disabled={currentPage === totalPages}
+          style={{ ...btnBase, background: isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.04)", color: currentPage === totalPages ? txMute : tx, opacity: currentPage === totalPages ? 0.4 : 1, cursor: currentPage === totalPages ? "not-allowed" : "pointer" }}
+        >
+          <IconChevronRight size={14} color={currentPage === totalPages ? txMute : tx} />
+        </button>
+      </div>
     </div>
   );
 }
@@ -328,6 +468,8 @@ export default function PrototypePage() {
   const [incomeCategory, setIncomeCategory] = useState<IncomeCategory>("Salary");
   const [incomeAmount, setIncomeAmount] = useState("");
   const [incomeError, setIncomeError] = useState<string | null>(null);
+  const [expenseError, setExpenseError] = useState<string | null>(null);
+  const [addingExpense, setAddingExpense] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<ExpenseCategory | "All">("All");
   const [searchTerm, setSearchTerm] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -336,8 +478,12 @@ export default function PrototypePage() {
   const categoryDropdownRef = useRef<HTMLDivElement>(null);
   const filterDropdownRef = useRef<HTMLDivElement>(null);
 
+  // ── Pagination state ─────────────────────────────────────
+  const [currentPage, setCurrentPage] = useState(1);
+
   const [catState, setCatState] = useState<CategorizationState>({ status: "idle" });
   const [categorizationSource, setCategorizationSource] = useState<"ml" | null>(null);
+  const [currentScanSource, setCurrentScanSource] = useState<"ocr" | "esp32" | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const catAbortRef = useRef<AbortController | null>(null);
   const userOverrideRef = useRef(false);
@@ -372,7 +518,6 @@ export default function PrototypePage() {
       const { data: incomeData } = await supabase.from("incomes").select("*").eq("month", month).order("created_at", { ascending: false });
       if (incomeData) {
         setIncomes(incomeData);
-        // Keep the budgets table aligned with the income total so Chat/Insights match the dashboard.
         syncBudget(incomeData);
       }
       setLoadingData(false);
@@ -393,11 +538,13 @@ export default function PrototypePage() {
 
   useEffect(() => { queueRef.current = queue; }, [queue]);
 
+  // Reset to page 1 when filters change
+  useEffect(() => { setCurrentPage(1); }, [selectedCategory, searchTerm]);
+
   const activeItem = useMemo(() => queue.find(q => q.id === activeQueueId) ?? null, [queue, activeQueueId]);
   const reviewables = useMemo(() => queue.filter(q => !q.skipped), [queue]);
   const activeReviewIndex = useMemo(() => reviewables.findIndex(q => q.id === activeQueueId), [reviewables, activeQueueId]);
 
-  // Mirror the active queue item into the legacy preview/extracted-data state.
   useEffect(() => {
     if (!activeItem) return;
     setCapturedImageUrl(activeItem.imageUrl);
@@ -410,35 +557,21 @@ export default function PrototypePage() {
 
   const triggerCategorization = useCallback((newTitle: string, newMerchant: string) => {
     if (userOverrideRef.current) return;
-
-    // Abort any in-flight categorization request immediately
-    if (catAbortRef.current) {
-      catAbortRef.current.abort();
-      catAbortRef.current = null;
-    }
-
-    if (!newTitle.trim() && !newMerchant.trim()) {
-      setCatState({ status: "idle" });
-      return;
-    }
-
+    if (catAbortRef.current) { catAbortRef.current.abort(); catAbortRef.current = null; }
+    if (!newTitle.trim() && !newMerchant.trim()) { setCatState({ status: "idle" }); return; }
     if (debounceRef.current) clearTimeout(debounceRef.current);
-
     debounceRef.current = setTimeout(async () => {
       const controller = new AbortController();
       catAbortRef.current = controller;
-
       setCatState({ status: "loading" });
       try {
         const res = await fetch("/api/categorize", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
+          method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ title: newTitle, merchantName: newMerchant }),
           signal: controller.signal,
         });
         if (!res.ok) throw new Error("categorize failed");
         const data = await res.json();
-
         if (!userOverrideRef.current) {
           setCategory(data.category as ExpenseCategory);
           setIsAutoCategorized(true);
@@ -481,7 +614,6 @@ export default function PrototypePage() {
     esp32TimeoutRef.current = null;
   }
 
-  // ── Queue helpers ────────────────────────────────────────────
   function base64ToBlob(base64: string, mime: string): Blob {
     const byteChars = atob(base64);
     const byteArr   = new Uint8Array(byteChars.length);
@@ -510,6 +642,7 @@ export default function PrototypePage() {
     setCapturedImageUrl(null); setCapturedBase64(null); setCapturedBlob(null);
     setQueue([]); setActiveQueueId(null); esp32SeenIds.current.clear();
     setScannerMode("esp32-waiting");
+    setCurrentScanSource("esp32");
 
     const armTimeout = () => {
       if (esp32TimeoutRef.current) clearTimeout(esp32TimeoutRef.current);
@@ -529,7 +662,6 @@ export default function PrototypePage() {
         if (data.status !== "ready") return;
         if (data.id && esp32SeenIds.current.has(data.id)) return;
         if (data.id) esp32SeenIds.current.add(data.id);
-
         const mime    = data.mimeType ?? "image/jpeg";
         const dataUrl = `data:${mime};base64,${data.imageBase64}`;
         const item = makeQueued({
@@ -538,7 +670,7 @@ export default function PrototypePage() {
           ocrResult: data.ocrResult ?? null, source: "esp32",
         });
         setQueue(prev => [...prev, item]);
-        armTimeout(); // got a capture → reset idle timer
+        armTimeout();
       } catch { /* silently retry until timeout */ }
     }, 2_000);
   }
@@ -547,6 +679,7 @@ export default function PrototypePage() {
     setOcrResult(null); setOcrError(null);
     setCapturedImageUrl(null); setCapturedBase64(null); setCapturedBlob(null);
     if (scannerMode === "idle") { setQueue([]); setActiveQueueId(null); }
+    setCurrentScanSource("ocr");
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } } });
       streamRef.current = stream;
@@ -566,13 +699,13 @@ export default function PrototypePage() {
       const item = makeQueued({ imageUrl: dataUrl, base64, mime: "image/jpeg", blob: blob ?? base64ToBlob(base64, "image/jpeg"), source: "live" });
       setQueue(prev => [...prev, item]);
     }, "image/jpeg", 0.92);
-    // stay in "live" so the user can snap another shot
   }
 
   function handleGalleryPick(files: FileList | null) {
     if (!files || files.length === 0) return;
     stopStream(); setOcrError(null);
     setQueue([]); setActiveQueueId(null);
+    setCurrentScanSource("ocr");
     const images = Array.from(files).filter(f => f.type.startsWith("image/"));
     if (images.length === 0) return;
 
@@ -599,7 +732,6 @@ export default function PrototypePage() {
     } catch { return null; }
   }
 
-  // OCR every pending item, then load the first reviewable into the form.
   async function processQueue(items: QueuedReceipt[]) {
     setScannerMode("review");
     const working = items.map(i => ({ ...i }));
@@ -626,14 +758,13 @@ export default function PrototypePage() {
     if (first) loadQueueItemIntoForm(first);
     else {
       const firstErr = working.find(q => !q.saved && !q.skipped);
-      if (firstErr) setActiveQueueId(firstErr.id); // show the error item
+      if (firstErr) setActiveQueueId(firstErr.id);
     }
   }
 
-  // Upload the receipt image (once) and fill the expense form from an item's OCR result.
   async function loadQueueItemIntoForm(item: QueuedReceipt) {
     setActiveQueueId(item.id);
-    if (!item.ocrResult) return; // error item — leave form untouched
+    if (!item.ocrResult) return;
 
     let receiptUrl = item.receiptUrl ?? null;
     if (!receiptUrl && item.blob) {
@@ -682,7 +813,6 @@ export default function PrototypePage() {
     formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  // Move to the next unsaved/unskipped item, computed from a given list.
   function advanceFrom(list: QueuedReceipt[], excludeId: string | null) {
     const next = list.find(q => q.id !== excludeId && !q.saved && !q.skipped && q.status === "done")
               ?? list.find(q => q.id !== excludeId && !q.saved && !q.skipped);
@@ -690,12 +820,10 @@ export default function PrototypePage() {
     else resetScanner();
   }
 
-  // Backward-compatible wrapper used by the "Load this receipt" button.
   function applyOCRToForm() {
     if (activeItem) loadQueueItemIntoForm(activeItem);
   }
 
-  // Re-run OCR for the active item (manual retry).
   async function runOCR() {
     if (!activeItem) return;
     const id = activeItem.id;
@@ -739,6 +867,8 @@ export default function PrototypePage() {
     setIsAutoCategorized(false); setCategorizationSource(null);
     setCatState({ status: "idle" }); userOverrideRef.current = false;
     setPendingReceiptUrl(null); setPendingRawOcr(null);
+    setCurrentScanSource(null);
+    setExpenseError(null);
   }
 
   function resetScanner() {
@@ -747,32 +877,68 @@ export default function PrototypePage() {
     setOcrResult(null); setOcrError(null);
     setQueue([]); setActiveQueueId(null); esp32SeenIds.current.clear();
     if (galleryInputRef.current) galleryInputRef.current.value = "";
+    setCurrentScanSource(null);
   }
 
   async function handleAddExpense(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const parsedAmount = Number(amount);
-    if (!title.trim() || Number.isNaN(parsedAmount) || parsedAmount <= 0) return;
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-    const { data, error } = await supabase.from("expenses").insert({
-      user_id: user.id, title: title.trim(), category,
-      amount: parsedAmount, merchant_name: merchantName.trim() || null,
-      notes: notes.trim() || null, auto_categorized: isAutoCategorized,
-      categorization_source: categorizationSource,
-      receipt_image_url: pendingReceiptUrl, raw_ocr_text: pendingRawOcr,
-    }).select().single();
-    if (!error && data) {
-      setExpenses(prev => [data, ...prev]);
-      clearForm();
-      const savedId = activeQueueId;
-      if (savedId) {
-        const updated = queue.map(q => q.id === savedId ? { ...q, saved: true } : q);
-        setQueue(updated);
-        advanceFrom(updated, savedId);
-      } else {
-        resetScanner();
+    setExpenseError(null);
+    setAddingExpense(true);
+    
+    try {
+      const parsedAmount = Number(amount);
+      
+      if (!title.trim()) {
+        setExpenseError("Please enter an expense title.");
+        setAddingExpense(false);
+        return;
       }
+      
+      if (Number.isNaN(parsedAmount) || parsedAmount <= 0) {
+        setExpenseError("Please enter an amount greater than 0.");
+        setAddingExpense(false);
+        return;
+      }
+      
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setExpenseError("You must be signed in to add an expense.");
+        setAddingExpense(false);
+        return;
+      }
+      
+      const { data, error } = await supabase.from("expenses").insert({
+        user_id: user.id, title: title.trim(), category,
+        amount: parsedAmount, merchant_name: merchantName.trim() || null,
+        notes: notes.trim() || null, auto_categorized: isAutoCategorized,
+        categorization_source: categorizationSource,
+        scan_source: currentScanSource,
+        receipt_image_url: pendingReceiptUrl, raw_ocr_text: pendingRawOcr,
+      }).select().single();
+      
+      if (error) {
+        setExpenseError(error.message ?? "Failed to save expense. Please try again.");
+        setAddingExpense(false);
+        return;
+      }
+      
+      if (data) {
+        setExpenses(prev => [data, ...prev]);
+        setExpenseError(null);
+        clearForm();
+        const savedId = activeQueueId;
+        if (savedId) {
+          const updated = queue.map(q => q.id === savedId ? { ...q, saved: true } : q);
+          setQueue(updated);
+          advanceFrom(updated, savedId);
+        } else {
+          resetScanner();
+        }
+      }
+    } catch (err) {
+      setExpenseError(err instanceof Error ? err.message : "An unexpected error occurred.");
+    } finally {
+      setAddingExpense(false);
     }
   }
 
@@ -786,7 +952,6 @@ export default function PrototypePage() {
     if (!error) setExpenses(prev => prev.filter(item => item.id !== expenseId));
   }
 
-  // Keep the budgets table in sync with the income total so Chat/Insights stay correct.
   async function syncBudget(list: Income[]) {
     const total = list.reduce((s, i) => s + i.amount, 0);
     const { data: { user } } = await supabase.auth.getUser();
@@ -836,6 +1001,19 @@ export default function PrototypePage() {
     return { total, byCategory, topCategory: topEntry?.[0] || "None", average };
   }, [expenses]);
 
+  // ── Week-over-week trend (last 7 days vs 7 before that) ──
+  const trends = useMemo(() => {
+    const now = new Date();
+    const msPerDay = 86_400_000;
+    const thisWeek = expenses.filter(e => e.created_at && (now.getTime() - new Date(e.created_at).getTime()) < 7 * msPerDay).reduce((s, e) => s + e.amount, 0);
+    const lastWeek = expenses.filter(e => e.created_at && {
+      diff: now.getTime() - new Date(e.created_at).getTime()
+    }.diff >= 7 * msPerDay && (now.getTime() - new Date(e.created_at).getTime()) < 14 * msPerDay).reduce((s, e) => s + e.amount, 0);
+
+    const pct = lastWeek === 0 ? null : ((thisWeek - lastWeek) / lastWeek) * 100;
+    return { thisWeek, lastWeek, pct };
+  }, [expenses]);
+
   const totalIncome = useMemo(() => incomes.reduce((s, i) => s + i.amount, 0), [incomes]);
   const incomeByCategory = useMemo(() => incomes.reduce<Record<IncomeCategory, number>>(
     (acc, i) => { acc[i.category] = (acc[i.category] || 0) + i.amount; return acc; },
@@ -845,7 +1023,15 @@ export default function PrototypePage() {
   const budgetValue = totalIncome;
   const budgetLeft = Math.max(budgetValue - totals.total, 0);
   const budgetUsage = budgetValue > 0 ? Math.min((totals.total / budgetValue) * 100, 100) : 0;
-  const budgetGrad = budgetUsage >= 80 ? "linear-gradient(90deg,#ef4444,#f87171)" : budgetUsage >= 60 ? "linear-gradient(90deg,#fb923c,#fbbf24)" : "linear-gradient(90deg,#14b8a6,#2dd4bf)";
+  // Color-coded gradient: green → amber → red
+  const budgetGrad = budgetUsage >= 85
+    ? "linear-gradient(90deg,#ef4444,#f87171)"
+    : budgetUsage >= 65
+    ? "linear-gradient(90deg,#fb923c,#fbbf24)"
+    : budgetUsage >= 45
+    ? "linear-gradient(90deg,#14b8a6,#fbbf24)"
+    : "linear-gradient(90deg,#14b8a6,#2dd4bf)";
+  const budgetStatusColor = budgetUsage >= 85 ? "#f87171" : budgetUsage >= 65 ? "#fb923c" : "#14b8a6";
   const now = new Date();
   const daysLeft = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate() - now.getDate();
   const dailyCap = budgetLeft > 0 && daysLeft > 0 ? budgetLeft / daysLeft : 0;
@@ -855,6 +1041,13 @@ export default function PrototypePage() {
     const matchSearch = item.title.toLowerCase().includes(searchTerm.trim().toLowerCase()) || (item.merchant_name ?? "").toLowerCase().includes(searchTerm.trim().toLowerCase());
     return matchCat && matchSearch;
   }), [expenses, searchTerm, selectedCategory]);
+
+  // ── Pagination derived values ─────────────────────────────
+  const totalPages = Math.max(1, Math.ceil(filteredExpenses.length / RECORDS_PER_PAGE));
+  const paginatedExpenses = useMemo(() => {
+    const start = (currentPage - 1) * RECORDS_PER_PAGE;
+    return filteredExpenses.slice(start, start + RECORDS_PER_PAGE);
+  }, [filteredExpenses, currentPage]);
 
   const glass = isDark
     ? { background: "rgba(13,17,26,0.75)", border: "1px solid rgba(255,255,255,0.06)", backdropFilter: "blur(20px)" }
@@ -876,11 +1069,11 @@ export default function PrototypePage() {
   const CategoryDropdown = ({
     value, onChange, open, setOpen, dropRef, filterMode = false,
   }: {
-    value: string; 
+    value: string;
     onChange: (v: string) => void;
-    open: boolean; 
+    open: boolean;
     setOpen: (v: boolean) => void;
-    dropRef: React.RefObject<HTMLDivElement | null>; 
+    dropRef: React.RefObject<HTMLDivElement | null>;
     filterMode?: boolean;
   }) => {
     const options = filterMode ? ["All", ...categories] : categories;
@@ -989,8 +1182,8 @@ export default function PrototypePage() {
         .dash-btn-outline { transition: background 0.15s, border-color 0.15s; }
         .dash-btn-outline:hover { background: ${isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)"} !important; }
 
-        .expense-row { transition: background 0.15s; border-radius: 12px; }
-        .expense-row:hover { background: ${glassHover} !important; }
+        .expense-row { transition: background 0.15s, transform 0.12s; border-radius: 12px; }
+        .expense-row:hover { background: ${glassHover} !important; transform: translateX(2px); }
         .del-btn { transition: background 0.15s, color 0.15s, border-color 0.15s; }
         .del-btn:hover { background: rgba(239,68,68,0.1) !important; color: #ef4444 !important; border-color: rgba(239,68,68,0.3) !important; }
 
@@ -1015,8 +1208,9 @@ export default function PrototypePage() {
         .confidence-pop { animation: popIn 0.25s cubic-bezier(0.22,1,0.36,1); }
         .cat-highlight { box-shadow: 0 0 0 2px rgba(20,184,166,0.35); transition: box-shadow 0.3s; }
 
-        /* Let grids (and their children) shrink inside the column flex wrapper so
-           tracks can collapse instead of overflowing the viewport on mobile. */
+        .page-btn { transition: all 0.15s cubic-bezier(0.22,1,0.36,1); }
+        .page-btn:hover:not(:disabled) { transform: translateY(-1px); }
+
         .dash-cols-4, .dash-cols-main { min-width: 0; }
         .dash-cols-4 > *, .dash-cols-main > * { min-width: 0; }
 
@@ -1046,11 +1240,27 @@ export default function PrototypePage() {
         {/* ── Stat Cards ── */}
         <div className="dash-cols-4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "1rem" }}>
           {[
-            { label: "Total Spent", value: pesoFormatter.format(totals.total), Icon: IconSpend, accent: "#14b8a6" },
-            { label: "Records", value: String(expenses.length), Icon: IconRecords, accent: "#6366f1" },
-            { label: "Top Category", value: totals.topCategory, Icon: IconTrophy, accent: "#fb923c" },
-            { label: "Avg Expense", value: pesoFormatter.format(totals.average), Icon: IconAvg, accent: "#ec4899" },
-          ].map(({ label, value, Icon, accent }) => (
+            {
+              label: "Total Spent", value: pesoFormatter.format(totals.total), Icon: IconSpend, accent: "#14b8a6",
+              trend: trends.pct !== null ? { pct: trends.pct, up: trends.pct > 0 } : null,
+              trendLabel: "vs last week",
+            },
+            {
+              label: "Records", value: String(expenses.length), Icon: IconRecords, accent: "#6366f1",
+              trend: null, trendLabel: `${expenses.filter(e => {
+                const d = e.created_at ? new Date(e.created_at) : null;
+                return d && (new Date().getTime() - d.getTime()) < 7 * 86_400_000;
+              }).length} this week`,
+            },
+            {
+              label: "Top Category", value: totals.topCategory, Icon: IconTrophy, accent: "#fb923c",
+              trend: null, trendLabel: totals.total > 0 ? `${((totals.byCategory[totals.topCategory as ExpenseCategory] ?? 0) / totals.total * 100).toFixed(0)}% of spend` : null,
+            },
+            {
+              label: "Avg Expense", value: pesoFormatter.format(totals.average), Icon: IconAvg, accent: "#ec4899",
+              trend: null, trendLabel: `across ${expenses.length} records`,
+            },
+          ].map(({ label, value, Icon, accent, trend, trendLabel }) => (
             <div key={label} className="dash-card" style={{ ...glass, borderRadius: 18, padding: "1.25rem 1.4rem", position: "relative", overflow: "hidden" }}>
               <div style={{ position: "absolute", top: -20, right: -20, width: 80, height: 80, borderRadius: "50%", background: `radial-gradient(circle, ${accent}22 0%, transparent 70%)`, pointerEvents: "none" }} />
               <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: "0.8rem" }}>
@@ -1060,6 +1270,21 @@ export default function PrototypePage() {
                 </div>
               </div>
               <p style={{ fontSize: "1.45rem", fontWeight: 700, color: tx, letterSpacing: "-0.02em" }}>{value}</p>
+              {/* Trend / sub-label */}
+              {trend ? (
+                <div style={{ display: "flex", alignItems: "center", gap: "0.3rem", marginTop: "0.5rem" }}>
+                  {trend.up
+                    ? <IconTrendUp size={12} color="#f87171" />
+                    : <IconTrendDown size={12} color="#22c55e" />
+                  }
+                  <span style={{ fontSize: "0.68rem", fontWeight: 600, color: trend.up ? "#f87171" : "#22c55e" }}>
+                    {trend.up ? "+" : ""}{trend.pct.toFixed(0)}%
+                  </span>
+                  <span style={{ fontSize: "0.65rem", color: txMute }}>{trendLabel}</span>
+                </div>
+              ) : trendLabel ? (
+                <p style={{ fontSize: "0.65rem", color: txMute, marginTop: "0.5rem" }}>{trendLabel}</p>
+              ) : null}
             </div>
           ))}
         </div>
@@ -1269,18 +1494,18 @@ export default function PrototypePage() {
                 <h2 style={{ fontSize: "1.05rem", fontWeight: 700, color: tx, margin: 0 }}>Add Expense</h2>
                 <p style={{ fontSize: "0.72rem", color: txMute, marginTop: "0.15rem" }}>Record a new transaction</p>
               </div>
-              {isAutoCategorized && catState.status !== "loading" && (
-                <span style={{ display: "inline-flex", alignItems: "center", gap: "0.3rem", padding: "0.25rem 0.65rem", borderRadius: 999, fontSize: "0.65rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", background: "rgba(99,102,241,0.12)", border: "1px solid rgba(99,102,241,0.25)", color: "#818cf8" }}>
-                  <IconBrain size={11} color="#818cf8" />
-                  ML Filled
-                </span>
-              )}
-              {catState.status === "loading" && (
-                <span style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem", padding: "0.25rem 0.65rem", borderRadius: 999, fontSize: "0.65rem", fontWeight: 700, background: isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)", border: isDark ? "1px solid rgba(255,255,255,0.1)" : "1px solid rgba(0,0,0,0.08)", color: txMute }}>
-                  <div style={{ width: 8, height: 8, borderRadius: "50%", border: "1.5px solid rgba(20,184,166,0.3)", borderTopColor: "#14b8a6", animation: "spin 0.7s linear infinite" }} />
-                  Analyzing…
-                </span>
-              )}
+              {/* Badge row: Auto + scan source */}
+              <div style={{ display: "flex", gap: "0.35rem", alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
+                {currentScanSource === "ocr" && <OcrBadge />}
+                {currentScanSource === "esp32" && <Esp32Badge />}
+                {isAutoCategorized && catState.status !== "loading" && <AutoBadge />}
+                {catState.status === "loading" && (
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem", padding: "0.25rem 0.65rem", borderRadius: 999, fontSize: "0.65rem", fontWeight: 700, background: isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)", border: isDark ? "1px solid rgba(255,255,255,0.1)" : "1px solid rgba(0,0,0,0.08)", color: txMute }}>
+                    <div style={{ width: 8, height: 8, borderRadius: "50%", border: "1.5px solid rgba(20,184,166,0.3)", borderTopColor: "#14b8a6", animation: "spin 0.7s linear infinite" }} />
+                    Analyzing…
+                  </span>
+                )}
+              </div>
             </div>
 
             <div>
@@ -1310,7 +1535,7 @@ export default function PrototypePage() {
               }
               {catState.status === "done" && !userOverrideRef.current && (
                 <div className="confidence-pop" style={{ marginTop: "0.45rem" }}>
-                  <ConfidencePill confidence={catState.confidence} source={catState.source} isDark={isDark} />
+                  <ConfidencePill confidence={catState.confidence} isDark={isDark} />
                 </div>
               )}
             </div>
@@ -1331,8 +1556,21 @@ export default function PrototypePage() {
               </div>
             )}
 
-            <button type="submit" className="dash-btn-primary" style={{ width: "100%", padding: "0.8rem", borderRadius: 11, border: "none", color: "#fff", fontSize: "0.875rem", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", marginTop: "0.25rem" }}>
-              + Add Expense
+            {expenseError && (
+              <div style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", padding: "0.6rem 0.8rem", borderRadius: 10, background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)", fontSize: "0.78rem", color: "#ef4444" }}>
+                <IconWarning size={14} color="#ef4444" /> {expenseError}
+              </div>
+            )}
+
+            <button type="submit" className="dash-btn-primary" disabled={addingExpense} style={{ width: "100%", padding: "0.8rem", borderRadius: 11, border: "none", color: "#fff", fontSize: "0.875rem", fontWeight: 700, cursor: addingExpense ? "not-allowed" : "pointer", fontFamily: "inherit", marginTop: "0.25rem", opacity: addingExpense ? 0.6 : 1, transition: "all 0.15s" }}>
+              {addingExpense ? (
+                <span style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", justifyContent: "center" }}>
+                  <div style={{ width: 12, height: 12, borderRadius: "50%", border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", animation: "spin 0.7s linear infinite" }} />
+                  Saving…
+                </span>
+              ) : (
+                "+ Add Expense"
+              )}
             </button>
           </form>
 
@@ -1342,7 +1580,9 @@ export default function PrototypePage() {
               <div>
                 <h2 style={{ fontSize: "1.05rem", fontWeight: 700, color: tx, margin: 0 }}>Expense Records</h2>
                 <p style={{ fontSize: "0.72rem", color: txMute, marginTop: "0.15rem" }}>
-                  {filteredExpenses.length !== expenses.length ? `Showing ${filteredExpenses.length} of ${expenses.length}` : `${expenses.length} total`}
+                  {filteredExpenses.length !== expenses.length
+                    ? `Showing ${filteredExpenses.length} of ${expenses.length}`
+                    : `${expenses.length} total`}
                 </p>
               </div>
               <div className="rec-search-wrap" style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
@@ -1371,10 +1611,12 @@ export default function PrototypePage() {
               })}
             </div>
 
-            <div className="scroll-list" style={{ display: "flex", flexDirection: "column", gap: "0.4rem", maxHeight: "clamp(260px, 45vh, 520px)", overflowY: "auto", paddingRight: "0.25rem" }}>
-              {filteredExpenses.map(item => {
+            {/* Records list — paginated */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+              {paginatedExpenses.map(item => {
                 const CatIcon = CATEGORY_ICON_COMPONENTS[item.category];
-                const itemSource = item.categorization_source ?? null;
+                const scanSrc = item.scan_source ?? null;
+                const isAuto = item.auto_categorized || item.categorization_source === "ml";
 
                 return (
                   <div key={item.id} className="expense-row" style={{ border: isDark ? "1px solid rgba(255,255,255,0.05)" : "1px solid rgba(0,0,0,0.07)", overflow: "hidden", flexShrink: 0 }}>
@@ -1389,7 +1631,10 @@ export default function PrototypePage() {
                             <span style={{ fontSize: "0.7rem", color: txMute }}>{item.category}</span>
                             {item.merchant_name && <span style={{ fontSize: "0.7rem", color: txMute }}>· {item.merchant_name}</span>}
                             {item.created_at && <span style={{ fontSize: "0.7rem", color: txMute }}>· {new Date(item.created_at).toLocaleDateString("en-PH", { month: "short", day: "numeric" })}</span>}
-                            {itemSource === "ml" && <SourceBadge source="ml" />}
+                            {/* Source badges */}
+                            {scanSrc === "ocr" && <OcrBadge />}
+                            {scanSrc === "esp32" && <Esp32Badge />}
+                            {isAuto && <AutoBadge />}
                           </div>
                         </div>
                       </div>
@@ -1428,6 +1673,16 @@ export default function PrototypePage() {
                 </div>
               )}
             </div>
+
+            {/* ── Pagination ── */}
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              onPageChange={setCurrentPage}
+              isDark={isDark}
+              tx={tx}
+              txMute={txMute}
+            />
           </div>
         </div>
 
@@ -1542,23 +1797,57 @@ export default function PrototypePage() {
           <div style={{ ...glass, borderRadius: 22, padding: "1.6rem" }}>
             <h2 style={{ fontSize: "1.05rem", fontWeight: 700, color: tx, margin: "0 0 0.2rem" }}>Budget Health</h2>
             <p style={{ fontSize: "0.78rem", color: txMute, marginBottom: "1.2rem" }}>Remaining from your income this month</p>
-            <p style={{ fontSize: "2.2rem", fontWeight: 800, letterSpacing: "-0.03em", color: budgetUsage >= 80 ? "#f87171" : "#14b8a6", marginBottom: "0.8rem" }}>{pesoFormatter.format(budgetLeft)}</p>
-            <div style={{ position: "relative", height: 8, borderRadius: 999, background: isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.07)", overflow: "hidden", marginBottom: "0.5rem" }}>
-              <div style={{ position: "absolute", inset: 0, width: `${budgetUsage}%`, background: budgetGrad, borderRadius: 999, transition: "width 0.8s cubic-bezier(0.22,1,0.36,1)" }} />
+            <p style={{ fontSize: "2.2rem", fontWeight: 800, letterSpacing: "-0.03em", color: budgetStatusColor, marginBottom: "0.8rem" }}>{pesoFormatter.format(budgetLeft)}</p>
+
+            {/* Color-coded budget bar with threshold markers */}
+            <div style={{ position: "relative", marginBottom: "0.5rem" }}>
+              <div style={{ position: "relative", height: 10, borderRadius: 999, background: isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.07)", overflow: "hidden" }}>
+                <div style={{ position: "absolute", inset: 0, width: `${budgetUsage}%`, background: budgetGrad, borderRadius: 999, transition: "width 0.8s cubic-bezier(0.22,1,0.36,1)" }} />
+              </div>
+              {/* Threshold markers at 65% and 85% */}
+              {[65, 85].map(threshold => (
+                <div key={threshold} style={{
+                  position: "absolute", top: 0, bottom: 0, width: 1.5, borderRadius: 1,
+                  left: `${threshold}%`, background: isDark ? "rgba(255,255,255,0.2)" : "rgba(0,0,0,0.15)",
+                  pointerEvents: "none",
+                }} />
+              ))}
             </div>
-            <p style={{ fontSize: "0.75rem", color: txMute, marginBottom: "1.2rem" }}>{budgetUsage.toFixed(0)}% used · {pesoFormatter.format(budgetValue)} budget</p>
+
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.2rem" }}>
+              <p style={{ fontSize: "0.75rem", color: txMute }}>{budgetUsage.toFixed(0)}% used · {pesoFormatter.format(budgetValue)} budget</p>
+              {/* Budget status label */}
+              <span style={{
+                fontSize: "0.65rem", fontWeight: 700, padding: "0.15rem 0.5rem",
+                borderRadius: 999, letterSpacing: "0.05em",
+                background: budgetUsage >= 85 ? "rgba(239,68,68,0.12)" : budgetUsage >= 65 ? "rgba(251,146,60,0.12)" : "rgba(20,184,166,0.1)",
+                color: budgetStatusColor,
+                border: `1px solid ${budgetUsage >= 85 ? "rgba(239,68,68,0.3)" : budgetUsage >= 65 ? "rgba(251,146,60,0.3)" : "rgba(20,184,166,0.3)"}`,
+              }}>
+                {budgetUsage >= 85 ? "⚠ Over budget soon" : budgetUsage >= 65 ? "Moderate spend" : "On track"}
+              </span>
+            </div>
+
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", padding: "1rem", borderRadius: 14, background: isDark ? "rgba(255,255,255,0.025)" : "rgba(0,0,0,0.025)", border: isDark ? "1px solid rgba(255,255,255,0.05)" : "1px solid rgba(0,0,0,0.06)" }}>
               {[{ label: "Days left", val: `${daysLeft}d` }, { label: "Daily cap", val: pesoFormatter.format(dailyCap) }].map(({ label, val }) => (
                 <div key={label}>
                   <p style={{ fontSize: "0.68rem", color: txMute }}>{label}</p>
-                  <p style={{ fontSize: "1.15rem", fontWeight: 700, color: "#14b8a6", marginTop: "0.15rem" }}>{val}</p>
+                  <p style={{ fontSize: "1.15rem", fontWeight: 700, color: budgetStatusColor, marginTop: "0.15rem" }}>{val}</p>
                 </div>
               ))}
             </div>
           </div>
 
           <div style={{ ...glass, borderRadius: 22, padding: "1.6rem" }}>
-            <h2 style={{ fontSize: "1.05rem", fontWeight: 700, color: tx, margin: "0 0 1.2rem" }}>Category Breakdown</h2>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.2rem" }}>
+              <h2 style={{ fontSize: "1.05rem", fontWeight: 700, color: tx, margin: 0 }}>Category Breakdown</h2>
+              {/* Shopping alert */}
+              {totals.total > 0 && totals.byCategory.Shopping / totals.total > 0.5 && (
+                <span style={{ display: "inline-flex", alignItems: "center", gap: "0.3rem", fontSize: "0.65rem", fontWeight: 700, padding: "0.2rem 0.55rem", borderRadius: 999, background: "rgba(236,72,153,0.1)", border: "1px solid rgba(236,72,153,0.25)", color: "#ec4899" }}>
+                  <IconWarning size={11} color="#ec4899" /> High Shopping
+                </span>
+              )}
+            </div>
             <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
               {Object.entries(totals.byCategory).sort((a, b) => b[1] - a[1]).filter(([, v]) => v > 0 || totals.total === 0).map(([name, value]) => {
                 const pct = totals.total > 0 ? (value / totals.total) * 100 : 0;
