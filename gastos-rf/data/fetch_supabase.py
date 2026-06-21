@@ -22,7 +22,7 @@ from pathlib import Path
 # ── Load .env.local from project root ────────────────────────────────────────
 try:
     from dotenv import load_dotenv
-    env_path = Path(__file__).parent.parent / ".env.local"
+    env_path = Path(__file__).resolve().parent.parent.parent / ".env.local"
     if env_path.exists():
         load_dotenv(env_path)
         print(f"Loaded env from {env_path}")
